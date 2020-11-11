@@ -9,20 +9,18 @@
 #define PLUGIN_VERSION		"0.0"
 #define PLUGIN_TAG			"\x04[DRONE]:\x01"
 
-#define SIZE_ENTITY			2000
+#define SIZE				PLATFORM_MAX_PATH
 #define INTERVAL_LIFE		0.1
 
 #define MDL_DUMMY			"models/props_fairgrounds/alligator.mdl"
 #define MDL_BODY			"models/f18/f18.mdl"
 #define MDL_ARM				"models/weapons/melee/w_golfclub.mdl"
+#define MDL_HELIY			"models/c2m5_helicopter_extraction/c2m5_helicopter.mdl"
 #define MDL_ROTOR			"models/props_junk/garbage_sodacan01a.mdl"
 //#define MDL_ROTOR			"models/missiles/f18_agm65maverick.mdl"
-//#define MDL_ROTOR			"models/w_models/weapons/w_eq_painpills.mdl"
-//#define MDL_ROTOR			"models/ghostanim.mdl"
 //#define MDL_ROTOR			"models/props_junk/barrel_fire.mdl"
 //#define MDL_ROTOR			"models/props_c17/oildrum001.mdl"
 //#define MDL_ROTOR			"models/props_collectables/coin.mdl"
-#define MDL_HELIY			"models/c2m5_helicopter_extraction/c2m5_helicopter.mdl"
 
 #define SND_TIMEOUT			"ambient/machines/steam_release_2.wav"
 
@@ -34,16 +32,14 @@ ConVar	g_ConVarPetEnable;
 bool	g_bIsPetEnable;
 bool	g_bIsRoundStart;
 
-//int	g_iBeamSprite_Blood;
-//int 	g_iBeamSprite_Bubble;
+float	g_fDrone_Life[SIZE];
+float	g_fDrone_Force[SIZE][ePOS_TOTAL];						// force for thruster
+int		g_iDrone_Thrust[SIZE][ePOS_TOTAL];						// entity thruster
+int		g_iDrone_EnvSteam[SIZE][ePOS_TOTAL];					// cosmetic
+int		g_iDrone_Master[SIZE]				= { -1, ... };		// drone target to follow
+int		g_iDrone_Slave[SIZE]				= { -1, ... };		// drone helicopter, follow parent.
+int		g_iClient_Drone[MAXPLAYERS+1]		= { -1, ... };		// guess what.. your crush... :)
 
-float	g_fDrone_Life[SIZE_ENTITY];
-float	g_fDrone_Force[SIZE_ENTITY][POS_THRUST_TOTAL];		// left right force on/off
-int		g_iDrone_Thrust[SIZE_ENTITY][POS_THRUST_TOTAL];
-int		g_iDroneEnvSteam[SIZE_ENTITY][POS_THRUST_TOTAL];	// cosmetic
-int		g_iClient_Drone[MAXPLAYERS+1]	= { -1, ... };		// guess what.. your crush... :)
-int		g_iDroneMaster[SIZE_ENTITY]		= { -1, ... };		// guess what.. your crush... :)
-bool	g_bIsHittingWall[SIZE_ENTITY];
 ///// debigging var ////
 //bool g_bIsTestedOnce	= false;
 int BestFriendForever;
@@ -101,11 +97,6 @@ public void OnMapStart()
 	PrecacheModel( MDL_HELIY, true );
 	
 	PrecacheSound( SND_TIMEOUT, true );
-	
-	//PrecacheModel( BEAMSPRITE_BUBBLE, true );
-	//g_iBeamSprite_Blood	= PrecacheModel( BEAMSPRITE_BLOOD );
-	//g_iBeamSprite_Bubble	= PrecacheModel( BEAMSPRITE_BUBBLE );
-	//g_iBeamSprite_Skull	= PrecacheModel( BEAMSPRITE_SKULL );
 }
 
 public Action AdminModelMove( int client, any args )
@@ -208,8 +199,7 @@ public Action AdminModelSpawn( int client, any args )
 		
 		GetClientEyePosition( client, pos_start );
 		GetClientEyeAngles( client, ang_start );
-		bool gotpos = TraceRayGetEndpoint( pos_start, ang_start, client, pos_buffe );
-		if( gotpos )
+		if( TraceRayGetEndpoint( pos_start, ang_start, client, pos_buffe ))
 		{
 			pos_buffe[2] += DRONE_HEIGHT;
 			ang_start[0] = 0.0;
@@ -272,11 +262,29 @@ public Action OnPlayerRunCmd( int client, int& buttons, int& impulse, float vel[
 				int target = TraceRayGetEntity( pos, ang, client );
 				if( target > 0 && IsValidEdict( target ))
 				{
-					g_iDroneMaster[pet] = EntIndexToEntRef( target );
+					int newtarget = EntIndexToEntRef( target );
+					if( g_iDrone_Master[pet] != newtarget )
+					{
+						if( target < MaxClients )
+						{
+							PrintToChat( client, "%s Acquiring target \x05%N", PLUGIN_TAG, target );
+						}
+						else
+						{
+							char entName[16];
+							GetEntityClassname( target, entName, sizeof( entName ));
+							PrintToChat( client, "%s Acquiring target \x05%s", PLUGIN_TAG, entName );
+						}
+					}
+					g_iDrone_Master[pet] = newtarget;
 				}
 				else
 				{
-					g_iDroneMaster[pet] = -1;
+					if( g_iDrone_Master[pet] != -1 )
+					{
+						PrintToChat( client, "%s Target cancled", PLUGIN_TAG );
+					}
+					g_iDrone_Master[pet] = -1;
 				}
 			}
 		}
@@ -321,7 +329,7 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 	int drone = CreateParent( MDL_DUMMY, pos, ang, 0.01 );
 	if( drone != -1 )
 	{
-		g_iDroneMaster[drone] = -1;
+		g_iDrone_Master[drone] = -1;
 		SetOwner( drone, owner );
 		
 		float pos_attch[4][3];
@@ -335,7 +343,7 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		///////////////////////////////////////
 		//////////////// ROTOR ////////////////
 		///////////////////////////////////////
-		for( i = POS_ROTOR_1; i <= POS_ROTOR_4; i++ )
+		for( i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
 		{
 			// thrust to lift our drone at 4 arm pos. we build 1 by 1
 			SetArray3DFloat( 0.0, 0.0, 0.0, pos_attch[i] );
@@ -366,7 +374,7 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 			SetArray3DFloat( 0.0, 0.0, -3.0, pos_origin );
 			SetArray3DFloat( 90.0, 0.0, 0.0, ang_adjust );
 			temp = CreateEnvSteam( dummy, pos_origin, ang_adjust, g_iColor_Exaust );
-			g_iDroneEnvSteam[drone][i] = EntIndexToEntRef( temp );
+			g_iDrone_EnvSteam[drone][i] = EntIndexToEntRef( temp );
 			
 			ang_start += ang_incre;
 		}
@@ -376,69 +384,73 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		///////////////// TAIL ////////////////
 		///////////////////////////////////////
 		// thrust move forward
-		SetArray3DFloat( -18.0, -2.5, -1.0, pos_origin );
+		SetArray3DFloat( -2.0, 0.0, 0.0, pos_origin );
 		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_MAIN1] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_MAIN1] );
-		g_iDrone_Thrust[drone][POS_THRUST_MAIN1] = EntIndexToEntRef( temp );
+		g_fDrone_Force[drone][ePOS_THRUST_MAIN1] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_THRUST_MAIN1] );
+		g_iDrone_Thrust[drone][ePOS_THRUST_MAIN1] = EntIndexToEntRef( temp );
+		
+		SetArray3DFloat( -18.0, -2.5, -1.0, pos_origin );
 		SetArray3DFloat( 180.0, 0.0, 0.0, ang_adjust );
 		temp = CreateEnvSteam( drone, pos_origin, ang_adjust, g_iColor_Exaust );
-		g_iDroneEnvSteam[drone][POS_THRUST_MAIN1] = EntIndexToEntRef( temp );
+		g_iDrone_EnvSteam[drone][ePOS_THRUST_MAIN1] = EntIndexToEntRef( temp );
+		
+		SetArray3DFloat( -2.0, 0.0, 0.0, pos_origin );
+		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
+		g_fDrone_Force[drone][ePOS_THRUST_MAIN2] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_THRUST_MAIN2] );
+		g_iDrone_Thrust[drone][ePOS_THRUST_MAIN2] = EntIndexToEntRef( temp );
 		
 		SetArray3DFloat( -18.0, 2.5, -1.0, pos_origin );
-		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_MAIN2] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_MAIN2] );
-		g_iDrone_Thrust[drone][POS_THRUST_MAIN2] = EntIndexToEntRef( temp );
 		SetArray3DFloat( 180.0, 0.0, 0.0, ang_adjust );
 		temp = CreateEnvSteam( drone, pos_origin, ang_adjust, g_iColor_Exaust );
-		g_iDroneEnvSteam[drone][POS_THRUST_MAIN2] = EntIndexToEntRef( temp );
+		g_iDrone_EnvSteam[drone][ePOS_THRUST_MAIN2] = EntIndexToEntRef( temp );
 		
 		
 		///////////////////////////////////////
 		////////////// NAVIGATION /////////////
 		///////////////////////////////////////
 		// thrust to move against east
-		SetArray3DFloat( 0.0, 15.0, 0.0, pos_origin );
+		SetArray3DFloat( 0.0, 1.0, 0.0, pos_origin );
 		SetArray3DFloat( 0.0, ANGLE_WEST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_EAST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_EAST] );
-		g_iDrone_Thrust[drone][POS_THRUST_EAST] = EntIndexToEntRef( temp );
+		g_fDrone_Force[drone][ePOS_THRUST_EAST] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_THRUST_EAST] );
+		g_iDrone_Thrust[drone][ePOS_THRUST_EAST] = EntIndexToEntRef( temp );
 		
 		// thrust to move against nort east
-		SetArray3DFloat( 15.0, 15.0, 0.0, pos_origin );
+		SetArray3DFloat( 1.0, 1.0, 0.0, pos_origin );
 		SetArray3DFloat( 0.0, ANGLE_NTWEST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_NTEAST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_NTEAST] );
-		g_iDrone_Thrust[drone][POS_THRUST_NTEAST] = EntIndexToEntRef( temp );
+		g_fDrone_Force[drone][ePOS_THRUST_NTEAST] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_THRUST_NTEAST] );
+		g_iDrone_Thrust[drone][ePOS_THRUST_NTEAST] = EntIndexToEntRef( temp );
 		
 		// thrust to move against nort
-		SetArray3DFloat( 15.0, 0.0, 0.0, pos_origin );
+		SetArray3DFloat( 1.0, 0.0, 0.0, pos_origin );
 		SetArray3DFloat( 0.0, 180.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_NORTN] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_NORTN] );
-		g_iDrone_Thrust[drone][POS_THRUST_NORTN] = EntIndexToEntRef( temp );
+		g_fDrone_Force[drone][ePOS_THRUST_NORTN] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_THRUST_NORTN] );
+		g_iDrone_Thrust[drone][ePOS_THRUST_NORTN] = EntIndexToEntRef( temp );
 		
 		// thrust to move against nort west
-		SetArray3DFloat( -15.0, 15.0, 0.0, pos_origin );
+		SetArray3DFloat( 1.0, -1.0, 0.0, pos_origin );
 		SetArray3DFloat( 0.0, ANGLE_NTEAST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_NTWEST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_NTWEST] );
-		g_iDrone_Thrust[drone][POS_THRUST_NTWEST] = EntIndexToEntRef( temp );
+		g_fDrone_Force[drone][ePOS_THRUST_NTWEST] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_THRUST_NTWEST] );
+		g_iDrone_Thrust[drone][ePOS_THRUST_NTWEST] = EntIndexToEntRef( temp );
 		
 		// thrust to move left
-		SetArray3DFloat( 0.0, -15.0, 0.0, pos_origin );
+		SetArray3DFloat( 0.0, -1.0, 0.0, pos_origin );
 		SetArray3DFloat( 0.0, ANGLE_EAST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_WEST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_WEST] );
-		g_iDrone_Thrust[drone][POS_THRUST_WEST] = EntIndexToEntRef( temp );
+		g_fDrone_Force[drone][ePOS_THRUST_WEST] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_THRUST_WEST] );
+		g_iDrone_Thrust[drone][ePOS_THRUST_WEST] = EntIndexToEntRef( temp );
 		
 		// thrust to rotate left right
-		SetArray3DFloat( 0.0, 0.0, 0.0, pos_origin );
+		SetArray3DFloat( -1.0, 0.0, 0.0, pos_origin );
 		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_ROTATE] = FORCE_NONE;
-		temp = CreateTorque( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_ROTATE] );
-		g_iDrone_Thrust[drone][POS_THRUST_ROTATE] = EntIndexToEntRef( temp );
+		g_fDrone_Force[drone][ePOS_THRUST_ROTATE] = FORCE_NONE;
+		temp = CreateTorque( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_THRUST_ROTATE] );
+		g_iDrone_Thrust[drone][ePOS_THRUST_ROTATE] = EntIndexToEntRef( temp );
 		
 		
 		///////////////////////////////////////
@@ -452,7 +464,9 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		// small small Helicopter
 		SetArray3DFloat( 74.0, 104.0, 10.0, pos_origin );
 		SetArray3DFloat( 0.0, 91.0, 0.0, ang_adjust );
-		BestFriendForever = CreatEntAnimation( drone, MDL_HELIY, "hover1", pos_origin, ang_adjust, 0.03 );
+		temp = CreatEntAnimation( drone, MDL_HELIY, "hover1", pos_origin, ang_adjust, 0.03 );
+		g_iDrone_Slave[drone] = EntIndexToEntRef( temp );
+		
 		
 		///////////////////////////////////////
 		////////////////// GUN ////////////////
@@ -497,30 +511,28 @@ public Action Timer_DroneThink( Handle timer, any entref )
 				GetEntOrigin( entity, pos_entity, 0.0 );
 				GetEntOrigin( client, pos_target, DRONE_HEIGHT );
 				
-				if( g_iDroneMaster[entity] != -1 )
+				if( g_iDrone_Master[entity] != -1 )
 				{
-					int target = EntRefToEntIndex( g_iDroneMaster[entity] );
+					int target = EntRefToEntIndex( g_iDrone_Master[entity] );
 					if( target > 0 && IsValidEdict( target ))
 					{
 						GetEntOrigin( target, pos_target, DRONE_HEIGHT );
 					}
 					else
 					{
-						g_iDroneMaster[entity] = -1;
+						g_iDrone_Master[entity] = -1;
 						PrintToChat( client, "%s Target cleared", PLUGIN_TAG );
 					}
 				}
 				
+				float ang_entity[3];
+				GetEntAngle( entity, ang_entity, 0.0, 0 );
 				Think_Lifting( entity, pos_entity, pos_target );
 				Think_Direction( entity, pos_entity, pos_target );
-				Think_Forward( entity, pos_entity, pos_target );
-				Think_SideObstackle( entity, POS_THRUST_EAST, ANGLE_EAST, pos_entity );
-				Think_SideObstackle( entity, POS_THRUST_WEST, ANGLE_WEST, pos_entity );
-				
-				Think_FrontObstackle( entity, POS_THRUST_NTEAST, ANGLE_NTEAST, pos_entity );
-				Think_FrontObstackle( entity, POS_THRUST_NORTN, ANGLE_NORTH, pos_entity );
-				Think_FrontObstackle( entity, POS_THRUST_NTWEST, ANGLE_NTWEST, pos_entity );
-				
+				Think_Forward( entity, pos_entity, pos_target, ang_entity );
+				Think_Obstacle90( entity, pos_entity, ang_entity );
+				Think_Obstacle45( entity, pos_entity, ang_entity );
+	
 				return Plugin_Continue;
 			}
 		}
@@ -550,10 +562,10 @@ void Think_Lifting( int entity, float pos_entity[3], float pos_target[3] )
 	}
 	
 	float force = FORCE_UPWARD - direction;
-	if( g_fDrone_Force[entity][POS_ROTOR_1] != force )
+	if( g_fDrone_Force[entity][ePOS_ROTOR_1] != force )
 	{
 		int temp;
-		for( int i = POS_ROTOR_1; i <= POS_ROTOR_4; i++ )
+		for( int i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
 		{
 			g_fDrone_Force[entity][i] = force;
 			temp = EntRefToEntIndex( g_iDrone_Thrust[entity][i] );
@@ -562,7 +574,7 @@ void Think_Lifting( int entity, float pos_entity[3], float pos_target[3] )
 				SetThrusterTorque( temp, force );
 			}
 			
-			temp = EntRefToEntIndex( g_iDroneEnvSteam[entity][i] );
+			temp = EntRefToEntIndex( g_iDrone_EnvSteam[entity][i] );
 			if( temp > MaxClients && IsValidEntity( temp ))
 			{
 				if( force < 180.0 )
@@ -606,9 +618,9 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 	// positive value turn left
 	float force = FORCE_ROTATE * direction;
 	
-	if( g_fDrone_Force[entity][POS_THRUST_ROTATE] != force )
+	if( g_fDrone_Force[entity][ePOS_THRUST_ROTATE] != force )
 	{
-		g_fDrone_Force[entity][POS_THRUST_ROTATE] = force;
+		g_fDrone_Force[entity][ePOS_THRUST_ROTATE] = force;
 		
 		int length = STEAM_LEN_IDLE;
 		float ang_ang[3] = { 180.0, 0.0, 0.0 };
@@ -626,8 +638,8 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 			}
 		}
 
-		int temp1 = EntRefToEntIndex( g_iDroneEnvSteam[entity][POS_THRUST_MAIN1] );
-		int temp2 = EntRefToEntIndex( g_iDroneEnvSteam[entity][POS_THRUST_MAIN2] );
+		int temp1 = EntRefToEntIndex( g_iDrone_EnvSteam[entity][ePOS_THRUST_MAIN1] );
+		int temp2 = EntRefToEntIndex( g_iDrone_EnvSteam[entity][ePOS_THRUST_MAIN2] );
 		if( temp1 > MaxClients && temp2 > MaxClients && IsValidEntity( temp1 ) && IsValidEntity( temp2 ))
 		{
 			TeleportEntity( temp1, NULL_VECTOR, ang_ang, NULL_VECTOR );
@@ -636,7 +648,7 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 			SetSteamLength( temp2, length );
 		}
 		
-		int temp = EntRefToEntIndex( g_iDrone_Thrust[entity][POS_THRUST_ROTATE] );
+		int temp = EntRefToEntIndex( g_iDrone_Thrust[entity][ePOS_THRUST_ROTATE] );
 		if( temp > MaxClients && IsValidEntity( temp ))
 		{
 			SetThrusterTorque( temp, force );
@@ -644,14 +656,15 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 	}
 }
 
-void Think_Forward( int entity, float pos_entity[3], float pos_target[3] )
+void Think_Forward( int entity, float pos_entity[3], float pos_target[3], float ang_entity[3] )
 {
 	float vec_buff[3];
 	SetArray3DFloat( pos_target[0], pos_target[1], pos_entity[2], vec_buff );
 	float dist	= GetVectorDistance( pos_entity, vec_buff );
 	float force	= FORCE_NONE;
-
-	if( dist > 100.0 && !g_bIsHittingWall[entity] )
+	
+	// thruster go forward
+	if( dist > 100.0 )
 	{
 		force = FORCE_FORWARD * dist;
 		if( force > MAXIMUM_SPEED )
@@ -660,16 +673,47 @@ void Think_Forward( int entity, float pos_entity[3], float pos_target[3] )
 		}
 	}
 	
-	if( g_fDrone_Force[entity][POS_THRUST_MAIN1] != force )
+	// front sensor
+	float dist_new = 1000.0;
+	float dist_old = 1000.0;
+	for( float i = -10.0; i <= 10.0; i += ANGLE_INCREMENT )
 	{
-		g_fDrone_Force[entity][POS_THRUST_MAIN1] = force;
-		g_fDrone_Force[entity][POS_THRUST_MAIN2] = force;
+		SetArray3DFloat( ang_entity[0], ang_entity[1], ang_entity[2], vec_buff );
+		vec_buff[AXIS_YAW] += i;
+		if( TraceRayGetEndpoint( pos_entity, vec_buff, entity, vec_buff ))
+		{
+			dist_old = GetVectorDistance( pos_entity, vec_buff );
+			if( dist_old < dist_new )
+			{
+				dist_new = dist_old;
+			}
+		}
+	}
+	
+	// push backward if got front obstacle, negate thrust force
+	dist_new = GetVectorDistance( pos_entity, vec_buff );
+	if( dist_new <= FORCE_RADIUS )
+	{
+		float mult = (FORCE_RADIUS - dist_new) * 1.5;
+		if( mult < 0.0 )
+		{
+			mult = 0.0;
+		}
+		
+		force = FORCE_FORWARD * mult * -1.0;
+		//PrintToChatAll( "%s Force %f | Dir %d", PLUGIN_TAG, force, direction );
+	}
+	
+	if( g_fDrone_Force[entity][ePOS_THRUST_MAIN1] != force )
+	{
+		g_fDrone_Force[entity][ePOS_THRUST_MAIN1] = force;
+		g_fDrone_Force[entity][ePOS_THRUST_MAIN2] = force;
 		
 		float gear;
 		int i, exaust, parent, length;
 		for( i = 0; i < 4; i++ )
 		{
-			exaust = EntRefToEntIndex( g_iDroneEnvSteam[entity][i] );
+			exaust = EntRefToEntIndex( g_iDrone_EnvSteam[entity][i] );
 			if( exaust > MaxClients && IsValidEntity( exaust ))
 			{
 				gear = GEAR_NONE;
@@ -678,6 +722,10 @@ void Think_Forward( int entity, float pos_entity[3], float pos_target[3] )
 				{
 					gear = GEAR_FORWARD;
 					length = STEAM_LEN_THRUST1;
+					if( force < FORCE_NONE )
+					{
+						gear *= -1.0;
+					}
 				}
 				parent = GetEntityParent( exaust );
 				GetEntAngle( parent, vec_buff, 0.0, 0 );
@@ -687,135 +735,214 @@ void Think_Forward( int entity, float pos_entity[3], float pos_target[3] )
 			}
 		}
 		/*
-		if( g_fDrone_Force[entity][POS_THRUST_MAIN1] == FORCE_NONE )
+		if( g_fDrone_Force[entity][ePOS_THRUST_MAIN1] == FORCE_NONE )
 		{
 			EmitSoundToAll( SND_TIMEOUT, entity, SNDCHAN_AUTO );
 		}*/
-		SetThrusterTorque( g_iDrone_Thrust[entity][POS_THRUST_MAIN1], force );
-		SetThrusterTorque( g_iDrone_Thrust[entity][POS_THRUST_MAIN2], force );
+		SetThrusterTorque( g_iDrone_Thrust[entity][ePOS_THRUST_MAIN1], force );
+		SetThrusterTorque( g_iDrone_Thrust[entity][ePOS_THRUST_MAIN2], force );
 	}
 }
 
-void Think_SideObstackle( int entity, int direction, float rotation, float pos_entity[3] )
+void Think_Obstacle90( int entity, float pos_entity[3], float ang_entity[3] )
 {
-	// sensor wall left, front, right
-	float ang_start[3];
-	float pos_output[3];
-	GetEntAngle( entity, ang_start, rotation, AXIS_YAW );
-	
-	bool gotpos = TraceRayGetEndpoint( pos_entity, ang_start, entity, pos_output );
-	if( gotpos )
+	float buff[3];
+	float ang_temp[3];
+	float dist_new	= 1000.0;
+	float dist_old	= 1000.0;
+	int region = 0;
+	for( float i = ANGLE_EAST; i <= ANGLE_WEST; i += ANGLE_INCREMENT )
 	{
-		float force = 0.0;
-		float dist = GetVectorDistance( pos_entity, pos_output );
-		if( dist <= FORCE_RADIUS )
+		if( i >= ANGLE_EAST && i <= ANGLE_NTEAST )
 		{
-			float mult = (FORCE_RADIUS - dist) * 1.5;
-			if( mult < 0.0 )
+			SetArray3DFloat( ang_entity[0], ang_entity[1], ang_entity[2], ang_temp );
+			ang_temp[AXIS_YAW] += i;
+			if( TraceRayGetEndpoint( pos_entity, ang_temp, entity, buff ))
 			{
-				mult = 0.0;
-			}
-			
-			force = FORCE_FORWARD * mult;
-			//PrintToChatAll( "%s Force %f | Dir %d", PLUGIN_TAG, force, direction );
-		}
-		
-		if( g_fDrone_Force[entity][direction] != force )
-		{
-			g_fDrone_Force[entity][direction] = force;
-			
-			int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][direction] );
-			if( trust > MaxClients && IsValidEntity( trust ))
-			{
-				SetThrusterTorque( trust, force );
-			}
-			
-			int i, exaust, rotor, length;
-			float gear;
-			for( i = POS_ROTOR_1; i <= POS_ROTOR_4; i++ )
-			{
-				exaust = EntRefToEntIndex( g_iDroneEnvSteam[entity][i] );
-				if( exaust > MaxClients && IsValidEntity( exaust ))
+				dist_old = GetVectorDistance( pos_entity, buff );
+				if( dist_old < dist_new )
 				{
-					length = STEAM_LEN_IDLE;
-					rotor = GetEntityParent( exaust );
-					GetEntAngle( rotor, ang_start, 0.0, 0 );
-					gear = GEAR_NONE;
-					if( force != FORCE_NONE )
-					{
-						length = STEAM_LEN_THRUST1;
-						gear = GEAR_LEFT;
-						if( direction == POS_THRUST_EAST )
-						{
-							gear = GEAR_RIGHT;
-						}
-					}
-					ang_start[2] = gear;
-					TeleportEntity( rotor, NULL_VECTOR, ang_start, NULL_VECTOR );
-					SetSteamLength( exaust, length );
+					dist_new = dist_old;
+					region = ePOS_THRUST_EAST;
+				}
+			}
+		}
+		else if( i >= ANGLE_NTWEST && i <= ANGLE_WEST )
+		{
+			SetArray3DFloat( ang_entity[0], ang_entity[1], ang_entity[2], ang_temp );
+			ang_temp[AXIS_YAW] += i;
+			if( TraceRayGetEndpoint( pos_entity, ang_temp, entity, buff ))
+			{
+				dist_old = GetVectorDistance( pos_entity, buff );
+				if( dist_old < dist_new )
+				{
+					dist_new = dist_old;
+					region = ePOS_THRUST_WEST;
 				}
 			}
 		}
 	}
-}
-
-void Think_FrontObstackle( int entity, int direction, float rotation, float pos_entity[3] )
-{
-	// sensor wall left, front, right
-	float ang_start[3];
-	float pos_output[3];
-	GetEntAngle( entity, ang_start, rotation, AXIS_YAW );
 	
-	bool gotpos = TraceRayGetEndpoint( pos_entity, ang_start, entity, pos_output );
-	if( gotpos )
+	float force = 0.0;
+	if( dist_new <= FORCE_RADIUS )
 	{
-		g_bIsHittingWall[entity] = false;
-		
-		float force = 0.0;
-		float dist = GetVectorDistance( pos_entity, pos_output );
-		if( dist <= FORCE_RADIUS )
+		float mult = (FORCE_RADIUS - dist_new) * 1.5;
+		if( mult < 0.0 )
 		{
-			g_bIsHittingWall[entity] = true;
-			float mult = (FORCE_RADIUS - dist) * 1.5;
-			if( mult < 0.0 )
-			{
-				mult = 0.0;
-			}
-			
-			force = FORCE_FORWARD * mult;
-			//PrintToChatAll( "%s Force %f | Dir %d", PLUGIN_TAG, force, direction );
+			mult = 0.0;
+		}
+		force = FORCE_FORWARD * mult;
+		//PrintToChatAll( "Distance: %f | Direction %s", dist_new, (region == ePOS_THRUST_EAST ? "Right":"Left"  ));
+	}
+	
+	// sensor wall left and right
+	if( g_fDrone_Force[entity][region] != force )
+	{
+		// if right is on, left should off
+		// if left is on, right should off
+		int other = ePOS_THRUST_EAST;
+		if( region == ePOS_THRUST_EAST )
+		{
+			other = ePOS_THRUST_WEST;
 		}
 		
-		if( g_fDrone_Force[entity][direction] != force )
+		int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][region] );
+		if( trust > MaxClients && IsValidEntity( trust ))
 		{
-			g_fDrone_Force[entity][direction] = force;
-			
-			int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][direction] );
-			if( trust > MaxClients && IsValidEntity( trust ))
+			SetThrusterTorque( trust, force );
+			g_fDrone_Force[entity][region] = force;
+		}
+		
+		trust = EntRefToEntIndex( g_iDrone_Thrust[entity][other] );
+		if( trust > MaxClients && IsValidEntity( trust ))
+		{
+			SetThrusterTorque( trust, FORCE_NONE );
+			g_fDrone_Force[entity][other] = FORCE_NONE;
+		}
+		
+		int exaust, rotor, length;
+		float gear;
+		for( int i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
+		{
+			exaust = EntRefToEntIndex( g_iDrone_EnvSteam[entity][i] );
+			if( exaust > MaxClients && IsValidEntity( exaust ))
 			{
-				SetThrusterTorque( trust, force );
-			}
-			
-			int i, exaust, rotor, length;
-			float gear;
-			for( i = POS_ROTOR_1; i <= POS_ROTOR_4; i++ )
-			{
-				exaust = EntRefToEntIndex( g_iDroneEnvSteam[entity][i] );
-				if( exaust > MaxClients && IsValidEntity( exaust ))
+				length = STEAM_LEN_IDLE;
+				rotor = GetEntityParent( exaust );
+				GetEntAngle( rotor, ang_temp, 0.0, 0 );
+				gear = GEAR_NONE;
+				if( force != FORCE_NONE )
 				{
-					length = STEAM_LEN_IDLE;
-					rotor = GetEntityParent( exaust );
-					GetEntAngle( rotor, ang_start, 0.0, 0 );
-					gear = GEAR_NONE;
-					if( force != FORCE_NONE )
+					length = STEAM_LEN_THRUST1;
+					gear = GEAR_LEFT;
+					if( region == ePOS_THRUST_EAST )
 					{
-						length = STEAM_LEN_THRUST1;
-						gear = GEAR_BACKWARD;
+						gear = GEAR_RIGHT;
 					}
-					ang_start[0] = gear;
-					TeleportEntity( rotor, NULL_VECTOR, ang_start, NULL_VECTOR );
-					SetSteamLength( exaust, length );
 				}
+				ang_temp[2] = gear;
+				TeleportEntity( rotor, NULL_VECTOR, ang_temp, NULL_VECTOR );
+				SetSteamLength( exaust, length );
+			}
+		}
+	}
+}
+
+void Think_Obstacle45( int entity, float pos_entity[3], float ang_entity[3] )
+{
+	float buff[3];
+	float ang_temp[3];
+	float dist_new	= 1000.0;
+	float dist_old	= 1000.0;
+	int region = 0;
+	for( float i = ANGLE_NTEAST; i <= ANGLE_NTWEST; i += ANGLE_INCREMENT )
+	{
+		if( i >= ANGLE_NTEAST && i <= -10.0 )
+		{
+			SetArray3DFloat( ang_entity[0], ang_entity[1], ang_entity[2], ang_temp );
+			ang_temp[AXIS_YAW] += i;
+			if( TraceRayGetEndpoint( pos_entity, ang_temp, entity, buff ))
+			{
+				dist_old = GetVectorDistance( pos_entity, buff );
+				if( dist_old < dist_new )
+				{
+					dist_new = dist_old;
+					region = ePOS_THRUST_NTEAST;
+				}
+			}
+		}
+		else if( i >= 10.0 && i <= ANGLE_NTWEST )
+		{
+			SetArray3DFloat( ang_entity[0], ang_entity[1], ang_entity[2], ang_temp );
+			ang_temp[AXIS_YAW] += i;
+			if( TraceRayGetEndpoint( pos_entity, ang_temp, entity, buff ))
+			{
+				dist_old = GetVectorDistance( pos_entity, buff );
+				if( dist_old < dist_new )
+				{
+					dist_new = dist_old;
+					region = ePOS_THRUST_NTWEST;
+				}
+			}
+		}
+	}
+	
+	float force = 0.0;
+	if( dist_new <= FORCE_RADIUS )
+	{
+		float mult = (FORCE_RADIUS - dist_new) * 1.5;
+		if( mult < 0.0 )
+		{
+			mult = 0.0;
+		}
+		force = FORCE_FORWARD * mult;
+		//PrintToChatAll( "Distance: %f | Direction %s", dist_new, (region == ePOS_THRUST_NTEAST ? "North East":"North West"  ));
+	}
+	
+	// sensor wall left and right
+	if( g_fDrone_Force[entity][region] != force )
+	{
+		// if right is on, left should off
+		// if left is on, right should off
+		int other = ePOS_THRUST_NTEAST;
+		if( region == ePOS_THRUST_NTEAST )
+		{
+			other = ePOS_THRUST_NTWEST;
+		}
+		
+		int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][region] );
+		if( trust > MaxClients && IsValidEntity( trust ))
+		{
+			SetThrusterTorque( trust, force );
+			g_fDrone_Force[entity][region] = force;
+		}
+		
+		trust = EntRefToEntIndex( g_iDrone_Thrust[entity][other] );
+		if( trust > MaxClients && IsValidEntity( trust ))
+		{
+			SetThrusterTorque( trust, FORCE_NONE );
+			g_fDrone_Force[entity][other] = FORCE_NONE;
+		}
+		
+		int exaust, rotor, length;
+		float gear;
+		for( int i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
+		{
+			exaust = EntRefToEntIndex( g_iDrone_EnvSteam[entity][i] );
+			if( exaust > MaxClients && IsValidEntity( exaust ))
+			{
+				length = STEAM_LEN_IDLE;
+				rotor = GetEntityParent( exaust );
+				GetEntAngle( rotor, ang_temp, 0.0, 0 );
+				gear = GEAR_NONE;
+				if( force != FORCE_NONE )
+				{
+					length = STEAM_LEN_THRUST1;
+					gear = GEAR_BACKWARD;
+				}
+				ang_temp[0] = gear;
+				TeleportEntity( rotor, NULL_VECTOR, ang_temp, NULL_VECTOR );
+				SetSteamLength( exaust, length );
 			}
 		}
 	}
@@ -838,4 +965,8 @@ stock void Hit_The_Fucking_Emergency_Break( int entity )
 	TeleportEntity( entity, NULL_VECTOR, ang, NULL_VECTOR );
 	//PrintToChatAll( "%s Drone is taking a fucking break", PLUGIN_TAG );
 }
+
+
+
+
 
