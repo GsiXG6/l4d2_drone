@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #define AXIS_PITCH				0			// axis rotation
 #define AXIS_YAW				1
 #define AXIS_ROLL				2
@@ -23,6 +24,37 @@
 #define ANGLE_NTWEST			45.0
 #define ANGLE_WEST				90.0
 #define ANGLE_INCREMENT			2.5
+=======
+#define AXIS_PITCH			0			// axis rotation of our angle manipulation
+#define AXIS_YAW			1
+#define AXIS_ROLL			2
+
+#define DRONE_HEIGHT		60.0
+#define FORCE_NONE			0.0
+#define FORCE_UPWARD		200.0
+#define FORCE_LIFT			10.0
+#define FORCE_FALL			2.0
+#define FORCE_ROTATE		15.0
+#define FORCE_FORWARD		5.0
+#define FORCE_RADIUS		80.0
+
+#define MAXIMUM_SPEED		1000.0
+
+#define GEAR_NONE			0.0
+#define GEAR_FORWARD		40.0
+#define GEAR_BACKWARD		-40.0
+#define GEAR_LEFT			45.0
+#define GEAR_RIGHT			-45.0
+
+
+
+#define ANGLE_EAST			-90.0
+#define ANGLE_NTEAST		-45.0
+#define ANGLE_NORTH			0.0
+#define ANGLE_NTWEST		45.0
+#define ANGLE_WEST			90.0
+#define ANGLE_INCREMENT		2.5
+>>>>>>> 517a0c42366b816ee46ac6aebc26b2673d7aa320
 
 enum
 {
@@ -30,6 +62,7 @@ enum
 	ePOS_ROTOR_2,
 	ePOS_ROTOR_3,
 	ePOS_ROTOR_4,
+<<<<<<< HEAD
 	ePOS_ENGINE,
 	ePOS_EXAUST_LEFT,
 	ePOS_EXAUST_RIGHT,
@@ -84,6 +117,37 @@ stock int g_iColor_Yellow[3]	= { 255, 255, 000 };
 stock int g_iColor_Grey[3]		= { 128, 128, 128 };
 
 stock int CreatePropPhysicsOverride( const char[] model, float pos[3], float ang[3], float model_scale )
+=======
+	ePOS_THRUST_MAIN1,
+	ePOS_THRUST_MAIN2,
+	ePOS_THRUST_EAST,
+	ePOS_THRUST_NTEAST,
+	ePOS_THRUST_NORTN,
+	ePOS_THRUST_NTWEST,
+	ePOS_THRUST_WEST,
+	ePOS_THRUST_ROTATE,
+	ePOS_TOTAL
+};
+
+#define STEAM_LEN_IDLE		2
+#define STEAM_LEN_THRUST1	5
+#define STEAM_LEN_THRUST2	10
+
+
+int g_iColor_White[3]	= { 255, 255, 255 };
+int g_iColor_Red[3]		= { 255, 000, 000 };
+//int g_iColor_LRed[3]	= { 255, 128, 128 };
+//int g_iColor_Green[3]	= { 000, 255, 000 };
+//int g_iColor_LGreen[3]	= { 128, 255, 128 };
+//int g_iColor_Blue[3]	= { 000, 000, 255 };
+//int g_iColor_LBlue[3]	= { 000, 128, 255 };
+//int g_iColor_Pinky[3]	= { 255, 000, 255 };
+//int g_iColor_Yellow[3]	= { 255, 255, 000 };
+//int g_iColor_Dark[3]	= { 128, 128, 128 };
+int g_iColor_Exaust[3]	= { 060, 080, 200 };
+
+stock int CreateParent( const char[] model, float pos[3], float ang[3], float model_scale )
+>>>>>>> 517a0c42366b816ee46ac6aebc26b2673d7aa320
 {
 	int parent = CreateEntityByName( "prop_physics_override" );
 	if( parent != -1 )
