@@ -1,64 +1,89 @@
-#define AXIS_PITCH			0			// axis rotation of our angle manipulation
-#define AXIS_YAW			1
-#define AXIS_ROLL			2
+#define AXIS_PITCH				0			// axis rotation
+#define AXIS_YAW				1
+#define AXIS_ROLL				2
 
-#define DRONE_HEIGHT		60.0
-#define FORCE_NONE			0.0
-#define FORCE_UPWARD		200.0
-#define FORCE_LIFT			10.0
-#define FORCE_FALL			2.0
-#define FORCE_ROTATE		15.0
-#define FORCE_FORWARD		5.0
-#define FORCE_RADIUS		80.0
+#define FORCE_NONE				0.0
+#define FORCE_UPWARD			200.0
+#define FORCE_LIFT				10.0
+#define FORCE_FALL				2.0
+#define FORCE_ROTATE			10.0
+#define FORCE_FORWARD			5.0
+#define FORCE_OBSTACLE			5.0
 
-#define MAXIMUM_SPEED		1000.0
+#define SAFE_RADIUS1			60.0
+#define SAFE_RADIUS2			30.0
+#define SAFE_MULTIPLIER			1.5
 
-#define GEAR_NONE			0.0
-#define GEAR_FORWARD		40.0
-#define GEAR_BACKWARD		-40.0
-#define GEAR_LEFT			45.0
-#define GEAR_RIGHT			-45.0
+// assuming drone nose is North
+#define ANGLE_EAST				-90.0
+#define ANGLE_NTEAST			-45.0
+#define ANGLE_NORTH_R			-10.0
+#define ANGLE_NORTH				0.0
+#define ANGLE_NORTH_L			10.0
+#define ANGLE_NTWEST			45.0
+#define ANGLE_WEST				90.0
+#define ANGLE_INCREMENT			2.5
 
+enum
+{
+	ePOS_ROTOR_1 = 0,
+	ePOS_ROTOR_2,
+	ePOS_ROTOR_3,
+	ePOS_ROTOR_4,
+	ePOS_ENGINE,
+	ePOS_EXAUST_LEFT,
+	ePOS_EXAUST_RIGHT,
+	ePOS_SLATS,
+	ePOS_RUDDER,
+	ePOS_NORTH_EAST,
+	ePOS_NORTH_WEST,
+	ePOS_SIZE
+};
 
+enum
+{
+	eDIR_EAST = 0,
+	eDIR_NORTH_EAST,
+	eDIR_NORTH,
+	eDIR_NORTH_WEST,
+	eDIR_WEST,
+	eDIR_SIZE
+};
 
-#define ANGLE_EAST			-90.0
-#define ANGLE_NTEAST		-45.0
-#define ANGLE_NORTH			0.0
-#define ANGLE_NTWEST		45.0
-#define ANGLE_WEST			90.0
+enum
+{
+	ePERK_HEAL_BTN = 0,
+	ePERK_AMMO_BTN,
+	ePERK_HEAL_LIGHT,
+	ePERK_AMMO_LIGHT,
+	ePERK_SIZE,
+};
 
-#define	POS_ROTOR_1			0
-#define	POS_ROTOR_2			1
-#define	POS_ROTOR_3			2
-#define	POS_ROTOR_4			3
-#define	POS_THRUST_MAIN1	4
-#define	POS_THRUST_MAIN2	5
-#define	POS_THRUST_EAST		6
-#define	POS_THRUST_NTEAST	7
-#define	POS_THRUST_NORTN	8
-#define	POS_THRUST_NTWEST	9
-#define	POS_THRUST_WEST		10
-#define	POS_THRUST_ROTATE	11
-#define POS_THRUST_TOTAL	12
+#define NAME_HEAL				"btn_drone_heal"
+#define NAME_AMMO				"btn_drone_ammo"
 
-#define STEAM_LEN_IDLE		2
-#define STEAM_LEN_THRUST1	5
-#define STEAM_LEN_THRUST2	10
+#define GEAR_NONE				00.0	// rotor angle
+#define GEAR_ONE				25.0
+#define GEAR_TWO				45.0
+#define GEAR_DODGE				15.0
 
+#define ENVSTEAM_IDLE			02		// env_steam length
+#define ENVSTEAM_GEARONE		05
+#define ENVSTEAM_GEARTWO		10
 
-int g_iColor_White[3]	= { 255, 255, 255 };
-int g_iColor_Red[3]		= { 255, 000, 000 };
-//int g_iColor_LRed[3]	= { 255, 128, 128 };
-//int g_iColor_Green[3]	= { 000, 255, 000 };
-//int g_iColor_LGreen[3]	= { 128, 255, 128 };
-//int g_iColor_Blue[3]	= { 000, 000, 255 };
-//int g_iColor_LBlue[3]	= { 000, 128, 255 };
-//int g_iColor_Pinky[3]	= { 255, 000, 255 };
-//int g_iColor_Yellow[3]	= { 255, 255, 000 };
-//int g_iColor_Dark[3]	= { 128, 128, 128 };
-int g_iColor_Exaust[3]	= { 060, 080, 200 };
+stock int g_iColor_Exaust[3]	= { 060, 080, 200 };
+stock int g_iColor_White[3]		= { 255, 255, 255 };
+stock int g_iColor_Red[3]		= { 255, 000, 000 };
+stock int g_iColor_LRed[3]		= { 255, 128, 128 };
+stock int g_iColor_Green[3]		= { 000, 255, 000 };
+stock int g_iColor_LGreen[3]	= { 128, 255, 128 };
+stock int g_iColor_Blue[3]		= { 000, 000, 255 };
+stock int g_iColor_LBlue[3]		= { 000, 128, 255 };
+stock int g_iColor_Pinky[3]		= { 255, 000, 255 };
+stock int g_iColor_Yellow[3]	= { 255, 255, 000 };
+stock int g_iColor_Grey[3]		= { 128, 128, 128 };
 
-stock int CreateParent( const char[] model, float pos[3], float ang[3], float model_scale )
+stock int CreatePropPhysicsOverride( const char[] model, float pos[3], float ang[3], float model_scale )
 {
 	int parent = CreateEntityByName( "prop_physics_override" );
 	if( parent != -1 )
@@ -77,23 +102,16 @@ stock int CreateParent( const char[] model, float pos[3], float ang[3], float mo
 		SetEntPropFloat( parent, Prop_Send,"m_flModelScale", model_scale );
 		DispatchKeyValueFloat( parent, "massscale", 0.01 );
 		DispatchKeyValueFloat( parent, "inertiascale", 0.01 );
-		//DispatchKeyValueFloat( parent, "forcetoenablemotion", 1.0 );
 		DispatchKeyValue( parent, "nodamageforces", "1" );
 		DispatchKeyValue( parent, "solid", "0" );
-		//DispatchKeyValue( parent, "disableshadows", "1" );
-		
-		//SetEntityGravity( parent, 0.1 );
-		//SetEntProp( parent, Prop_Send, "m_usSolidFlags", 12 );
-		//SetEntProp( parent, Prop_Data, "m_nSolidType", 6 );
-		//SetEntProp( parent, Prop_Send, "m_CollisionGroup", 0 );
-
+		DispatchKeyValue( parent, "disableshadows", "1" );
 		DispatchSpawn( parent );
 		SetColor( parent, g_iColor_White, 0 );
 	}
 	return parent;
 }
 
-stock int CreateSkin( int parent, const char[] model, float pos[3], float ang[3], float model_scale, int color[3], int alpha )
+stock int CreatePropDynamicOverride( int parent, const char[] model, float pos[3], float ang[3], float model_scale, int color[3], int alpha )
 {
 	int skin = CreateEntityByName( "prop_dynamic_override" );
 	if( skin != -1 )
@@ -110,20 +128,49 @@ stock int CreateSkin( int parent, const char[] model, float pos[3], float ang[3]
 		char spawnflags[16];
 		FormatEx( spawnflags, sizeof( spawnflags ), "%i", 8 | 512 ); // No collision | Not blockable
 		DispatchKeyValue( skin, "spawnflags", spawnflags );
-		//SetEntProp( skin, Prop_Send, "m_CollisionGroup", 0 ); 
-		
-		//DispatchKeyValue( skin, "solid", "0" );
 		DispatchKeyValue( skin, "model", model );
+		char scale[6];
+		FormatEx( scale, sizeof( scale ), "%f", model_scale );
+		DispatchKeyValue( skin, "modelscale", scale );
 		SetEntPropFloat( skin, Prop_Send,"m_flModelScale", model_scale );
 		DispatchKeyValueFloat( skin, "fademindist", 10000.0 );
 		DispatchKeyValueFloat( skin, "fademaxdist", 10000.0 );
 		DispatchKeyValueFloat( skin, "fadescale", 0.0 );
+		DispatchKeyValue( skin, "shadowcastdist", "0" );
 		DispatchKeyValue( skin, "disableshadows", "1" );
+		DispatchKeyValue( skin, "solid", "0" );
 		TeleportEntity( skin, pos, ang, NULL_VECTOR );
 		DispatchSpawn( skin );
 		SetColor( skin, color, alpha );
 	}
 	return skin;
+}
+
+stock int CreateButton( int parent, const char[] model, const char[] name, float pos[3], float ang[3], float model_scale, int color[3], int alpha )
+{
+	int btn = CreateEntityByName( "prop_dynamic_override" );
+	if( btn != -1 )
+	{
+		DispatchKeyValue( btn, "targetname", name );
+		
+		char parentName[32];
+		GetEntityName( parent, parentName );
+		SetVariantString( parentName );
+		AcceptEntityInput( btn, "SetParent" );
+		
+		char spawnflags[16];
+		FormatEx( spawnflags, sizeof( spawnflags ), "%i", 8 | 512 ); // No collision | Not blockable
+		DispatchKeyValue( btn, "spawnflags", spawnflags );
+		DispatchKeyValue( btn, "solid", "1" );
+		DispatchKeyValue( btn, "model", model );
+		SetEntPropFloat( btn, Prop_Send,"m_flModelScale", model_scale );
+		DispatchKeyValue( btn, "shadowcastdist", "0" );
+		DispatchKeyValue( btn, "disableshadows", "1" );
+		TeleportEntity( btn, pos, ang, NULL_VECTOR );
+		DispatchSpawn( btn );
+		SetColor( btn, color, alpha );
+	}
+	return btn;
 }
 
 stock int CreateEnvSteam( int parent, float pos_local[3], float ang_local[3], int tail_color[3] )
@@ -254,42 +301,6 @@ stock int CreateUprightConstrain( int parent, float pos[3], float ang[3] )
 	return upright;
 }
 
-stock int CreatSound( int parent, const char[] sound_path )
-{
-	int sound = CreateEntityByName( "ambient_generic" );
-	if( sound != -1 )
-	{
-		char nameSound[32];
-		Format( nameSound, sizeof( nameSound ), "petsound_%d", sound );
-		DispatchKeyValue( sound, "targetname", nameSound );
-		
-		char parentName[32];
-		GetEntityName( parent, parentName );
-		//SetVariantString( parentName );
-		AcceptEntityInput( sound, "parentname", parentName );
-		DispatchKeyValue( sound, "SourceEntityName", parentName );
-		
-		DispatchKeyValue( sound, "message", sound_path );
-		DispatchKeyValue( sound, "radius", "1750.0" );
-		DispatchKeyValue( sound, "spawnflags", "16" );
-		AcceptEntityInput( sound, "Volume", "5.0" );
-		AcceptEntityInput( sound, "Pitch", "45" );		
-
-		DispatchSpawn( sound );
-		AcceptEntityInput( sound, "PlaySound" );
-	}
-	return sound;
-}
-
-stock void SetThrusterTorque( int entity, float force )
-{
-	AcceptEntityInput( entity, "Deactivate" );
-	char force_scale[16];
-	IntToString( RoundToCeil(force), force_scale, sizeof( force_scale ));
-	DispatchKeyValue( entity, "Force", force_scale );
-	AcceptEntityInput( entity, "Activate" );
-}
-
 stock void GetLocalAttachmentPos( float angle_direction, float radius, float pos_output[3] )
 {
 	// calculate where the intersection between known radius and known angle. final result is new endpoint/pos_new
@@ -306,44 +317,15 @@ stock int CreatEntAnimation( int parent, const char[] model, const char[] animat
 		GetEntityName( parent, parentName );
 		SetVariantString( parentName );
 		AcceptEntityInput( entity, "SetParent" );
-		
 		DispatchKeyValue( entity, "model", model );
-		//DispatchKeyValueVector( entity, "origin", pos );
-		//DispatchKeyValueVector( entity, "Angles", ang );
-		SetEntProp( entity, Prop_Send, "m_CollisionGroup", 1 );
 		SetEntPropFloat( entity, Prop_Send,"m_flModelScale", model_scale );
+		SetEntProp( entity, Prop_Send, "m_CollisionGroup", 1 );
 		DispatchSpawn( entity );
 		SetVariantString( animation );
 		AcceptEntityInput( entity, "SetAnimation", -1, -1, 0 );
 		TeleportEntity( entity, pos, ang, NULL_VECTOR );
 	}
 	return entity;
-}
-
-stock int CreatSprite( int parent, const char[] attachment, const char[] model, float pos[3], float ang[3], float model_scale )
-{
-	int sprite = CreateEntityByName( "env_sprite" );
-	if( sprite != -1 )
-	{
-		if( !StrEqual( attachment, "none", false ))
-		{
-			SetVariantString( attachment );
-			AcceptEntityInput( sprite, "SetParentAttachment" );
-		}
-		char parentName[32];
-		GetEntityName( parent, parentName );
-		SetVariantString( parentName );
-		AcceptEntityInput( sprite, "SetParent" );
-		
-		DispatchKeyValue( sprite, "model", model );
-		//DispatchKeyValue( sprite, "spawnflags", "3" );
-		DispatchKeyValue( sprite, "spawnflags", "1" );
-		DispatchKeyValue( sprite, "rendermode", "9" );
-		DispatchKeyValueFloat( sprite, "scale", model_scale );
-		DispatchSpawn( sprite );
-		TeleportEntity( sprite, pos, ang, NULL_VECTOR );
-	}
-	return sprite;
 }
 
 stock int CreateGatlingGun( int parent, float pos[3], float ang[3], float damage, float radius )
@@ -358,7 +340,7 @@ stock int CreateGatlingGun( int parent, float pos[3], float ang[3], float damage
 		DispatchKeyValue( gathlinggun, "parentname", parentName );
 		DispatchKeyValueFloat( gathlinggun, "targetarc", radius );
 		DispatchKeyValueFloat( gathlinggun, "targetrange", radius );
-		DispatchKeyValueFloat( gathlinggun, "damagemod", damage );
+		DispatchKeyValueFloat( gathlinggun, "damagemod", (damage/100.0));	// valid value from 0.0 to 1.0
 		DispatchKeyValue( gathlinggun, "weapontype", "1" );
 		DispatchKeyValue( gathlinggun, "targetteam", "3" );
 		DispatchKeyValue( gathlinggun, "ignoreplayers", "1" );
@@ -369,15 +351,46 @@ stock int CreateGatlingGun( int parent, float pos[3], float ang[3], float damage
 	return gathlinggun;
 }
 
+stock int CreateLight( int parent, float pos[3], float ang[3], int color[3] )
+{
+	int light = CreateEntityByName("light_dynamic");
+	if( light != -1 )
+	{
+		char parentName[32];
+		GetEntityName( parent, parentName );
+		SetVariantString( parentName );
+		AcceptEntityInput( light, "SetParent" );
+		
+		char colbuff[18];
+		FormatEx( colbuff, sizeof( colbuff ), "%d %d %d 255", color[0], color[1], color[2] );
+		DispatchKeyValue( light, "_light", colbuff );
+		DispatchKeyValueFloat( light, "distance", 300.0 );
+		DispatchKeyValue( light, "brightness", "1" );
+		DispatchKeyValue( light, "_inner_cone", "5" );
+		DispatchKeyValue( light, "_cone", "20" );
+		DispatchKeyValue( light, "spotlight_radius", "30.0" );
+		DispatchKeyValue( light, "style", "9" );
+		DispatchSpawn( light );
+		AcceptEntityInput( light, "TurnOn" );
+		TeleportEntity( light, pos, ang, NULL_VECTOR );
+	}
+	return light;
+}
+
 stock float AngleDifference( float angle1, float angle2 )
 {
     int diff = ( RoundToCeil(angle2 - angle1) + 180 ) % 360 - 180;
     return float( diff < -180 ? diff + 360 : diff );
 }
 
-stock bool IsValidSurvivor( int client )
+stock bool IsSurvivorValid( int client )
 {
 	return ( client > 0 && client <= MaxClients && IsClientConnected( client ) && IsClientInGame( client ) && GetClientTeam( client ) == 2 );
+}
+
+stock bool IsEntityValid( int entity )
+{
+	return ( entity > 0 && IsValidEntity( entity ));
 }
 
 stock void GetEntOrigin( int entity, float pos_output[3], float mod_array_height )
@@ -407,25 +420,11 @@ stock void SetAttachment( int entity, int parent )
 	SetEntPropEnt( entity, Prop_Data, "m_attachedObject", parent );
 }
 
-stock void SetArray3DFloat( float val_0, float val_1, float val_2, float array_output[3] )
+stock void SetVector( float val_0, float val_1, float val_2, float array_output[3] )
 {
 	array_output[0] = val_0;
 	array_output[1] = val_1;
 	array_output[2] = val_2;
-}
-
-stock void AddValue3DFloat( float val_0, float val_1, float val_2, float array_output[3] )
-{
-	array_output[0] += val_0;
-	array_output[1] += val_1;
-	array_output[2] += val_2;
-}
-
-stock void CopyArray3DInt( int array_source[3], int array_output[3] )
-{
-	array_output[0] = array_source[0];
-	array_output[1] = array_source[1];
-	array_output[2] = array_source[2];
 }
 
 stock void Entity_Kill( int entity )
@@ -453,10 +452,8 @@ stock void SetColor( int entity, int color[3], int alpha )
 stock void SetGlow( int entity, int color[3], bool enable )
 {
 	int glowtype = 0;
-	if( enable )
-	{
-		glowtype = 3;
-	}
+	if( enable ) { glowtype = 3;}
+	
 	int m_glowcolor = color[0] + ( color[1] * 256 ) + ( color[2] * 65536 );
 	SetEntProp( entity, Prop_Send, "m_iGlowType", glowtype );
 	SetEntProp( entity, Prop_Send, "m_nGlowRange", 0 );
@@ -468,22 +465,33 @@ stock void GetEntityName( int entity, char[] entity_name )
 	GetEntPropString( entity, Prop_Data, "m_iName", entity_name, 32 );
 }
 
+stock void SetEntityName( int entity, const char[] entity_name )
+{
+	SetEntPropString( entity, Prop_Data, "m_iName", entity_name );
+}
+
+stock void GetPlayerHealth( int client, int health[2], float buffer[2] )
+{
+	health[0] = GetEntProp( client, Prop_Data, "m_iHealth" );
+	buffer[0] = GetEntPropFloat( client, Prop_Send, "m_healthBuffer" );
+}
+
+stock void SetPlayerHealth( int client, int health, float buffer )
+{
+	SetEntProp( client, Prop_Data, "m_iHealth", health );
+	SetEntPropFloat( client, Prop_Send, "m_healthBuffer", buffer );
+}
+
 stock int GetEntityParent( int entity )
 {
 	// get entity parent index
 	return ( GetEntPropEnt( entity, Prop_Data, "m_hMoveParent" ));
 }
 
-stock int GetEntityChild( int entity )
-{
-	// get entity child index
-	return ( GetEntPropEnt( entity, Prop_Data, "m_hMoveChild" ));
-}
-
 stock bool TraceRayGetEndpoint( float trace_pos_start[3], float trace_ang_start[3], any data, float trace_pos_output[3] )
 {
 	bool traced = false;
-	Handle trace = TR_TraceRayFilterEx( trace_pos_start, trace_ang_start, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceEntityFilterPlayers, data );
+	Handle trace = TR_TraceRayFilterEx( trace_pos_start, trace_ang_start, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceFilterData, data );
 	if( TR_DidHit( trace ))
 	{ 
 		// we just check if there is endpoint. we dont do any code inside trace function incase the code error, the Handle leaked.
@@ -497,7 +505,7 @@ stock bool TraceRayGetEndpoint( float trace_pos_start[3], float trace_ang_start[
 stock int TraceRayGetEntity( float trace_pos_start[3], float trace_ang_start[3], any data )
 {
 	int entity = -1;
-	Handle trace = TR_TraceRayFilterEx( trace_pos_start, trace_ang_start, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceEntityFilterPlayers, data );
+	Handle trace = TR_TraceRayFilterEx( trace_pos_start, trace_ang_start, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceFilterData, data );
 	if( TR_DidHit( trace ))
 	{ 
 		entity = TR_GetEntityIndex( trace );
@@ -506,9 +514,110 @@ stock int TraceRayGetEntity( float trace_pos_start[3], float trace_ang_start[3],
 	return entity;
 }
 
-stock bool TraceEntityFilterPlayers( int entity, int contentsMask, any data )
+stock bool TraceFilterData( int entity, int contentsMask, any data )
 {
 	return ( entity > 0 && entity != data );
+}
+
+stock bool GiveSurvivorAmmo( int client, int amount )
+{
+	int weapon = GetPlayerWeaponSlot( client, 0 );
+	if( IsEntityValid( weapon ))
+	{
+		int ammo_typ = GetEntProp( weapon, Prop_Send, "m_iPrimaryAmmoType");
+		int ammo_new = GetEntProp( client, Prop_Send, "m_iAmmo", 4, ammo_typ ) + amount;
+		SetEntProp( client, Prop_Send, "m_iAmmo", ammo_new, _, ammo_typ );
+		return true;
+	}
+	return false;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// unused stock
+stock void AddVector( float val_0, float val_1, float val_2, float array_output[3] )
+{
+	array_output[0] += val_0;
+	array_output[1] += val_1;
+	array_output[2] += val_2;
+}
+
+stock int CreatSound( int parent, const char[] sound_path )
+{
+	int sound = CreateEntityByName( "ambient_generic" );
+	if( sound != -1 )
+	{
+		char nameSound[32];
+		Format( nameSound, sizeof( nameSound ), "petsound_%d", sound );
+		DispatchKeyValue( sound, "targetname", nameSound );
+		
+		char parentName[32];
+		GetEntityName( parent, parentName );
+		//SetVariantString( parentName );
+		AcceptEntityInput( sound, "parentname", parentName );
+		DispatchKeyValue( sound, "SourceEntityName", parentName );
+		
+		DispatchKeyValue( sound, "message", sound_path );
+		DispatchKeyValue( sound, "radius", "1750.0" );
+		DispatchKeyValue( sound, "spawnflags", "16" );
+		AcceptEntityInput( sound, "Volume", "5.0" );
+		AcceptEntityInput( sound, "Pitch", "45" );		
+
+		DispatchSpawn( sound );
+		AcceptEntityInput( sound, "PlaySound" );
+	}
+	return sound;
+}
+
+stock int CreatSprite( int parent, const char[] attachment, const char[] model, float pos[3], float ang[3], float model_scale )
+{
+	int sprite = CreateEntityByName( "env_sprite" );
+	if( sprite != -1 )
+	{
+		if( !StrEqual( attachment, "none", false ))
+		{
+			SetVariantString( attachment );
+			AcceptEntityInput( sprite, "SetParentAttachment" );
+		}
+		char parentName[32];
+		GetEntityName( parent, parentName );
+		SetVariantString( parentName );
+		AcceptEntityInput( sprite, "SetParent" );
+		
+		DispatchKeyValue( sprite, "model", model );
+		//DispatchKeyValue( sprite, "spawnflags", "3" );
+		DispatchKeyValue( sprite, "spawnflags", "1" );
+		DispatchKeyValue( sprite, "rendermode", "9" );
+		DispatchKeyValueFloat( sprite, "scale", model_scale );
+		DispatchSpawn( sprite );
+		TeleportEntity( sprite, pos, ang, NULL_VECTOR );
+	}
+	return sprite;
+}
+
+stock int GetEntityChild( int entity )
+{
+	// get entity child index
+	return ( GetEntPropEnt( entity, Prop_Data, "m_hMoveChild" ));
 }
 
 stock int CreateEntity( const char[] ent_name, float pos[3], float ang[3] )
