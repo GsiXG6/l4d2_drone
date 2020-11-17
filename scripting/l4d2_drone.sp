@@ -1,3 +1,7 @@
+/* todo
+- drone slave animation...
+*/
+
 #include <sourcemod>
 #include <sdktools>
 #include <l4d2_drone>
@@ -47,6 +51,9 @@ int		g_iDrone_EnvSteam[SIZE][ePOS_SIZE];					// cosmetic
 int		g_iDrone_Master[SIZE]			= { -1, ... };		// drone target to follow
 int		g_iDrone_Slave[SIZE]			= { -1, ... };		// drone helicopter, follow parent.
 int		g_iClient_Drone[MAXPLAYERS+1]	= { -1, ... };		// guess what.. your crush... :)
+
+///// debigging var /////
+
 
 #define PLUGIN_NAME		"l4d2_drone"
 #define PLUGIN_VERSION	"0.0b"
