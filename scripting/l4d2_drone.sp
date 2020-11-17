@@ -1,61 +1,71 @@
+/* todo
+- drone slave animation...
+*/
+
 #include <sourcemod>
 #include <sdktools>
-#include <sdkhooks>
 #include <l4d2_drone>
 #pragma semicolon 1
 #pragma newdecls required
 
-#define PLUGIN_NAME			"l4d2_drone"
-#define PLUGIN_VERSION		"0.0"
-#define PLUGIN_TAG			"\x04[DRONE]:\x01"
+#define SIZE					PLATFORM_MAX_PATH
 
-#define SIZE_ENTITY			2000
-#define INTERVAL_LIFE		0.1
+#define MDL_DUMMY				"models/props_fairgrounds/alligator.mdl"
+#define MDL_BODY				"models/f18/f18.mdl"
+#define MDL_ARM					"models/weapons/melee/w_golfclub.mdl"
+#define MDL_HELIY				"models/c2m5_helicopter_extraction/c2m5_helicopter.mdl"
+#define MDL_ROTOR				"models/props_junk/garbage_sodacan01a.mdl"
 
-#define MDL_DUMMY			"models/props_fairgrounds/alligator.mdl"
-#define MDL_BODY			"models/f18/f18.mdl"
-#define MDL_ARM				"models/weapons/melee/w_golfclub.mdl"
-#define MDL_ROTOR			"models/props_junk/garbage_sodacan01a.mdl"
-//#define MDL_ROTOR			"models/missiles/f18_agm65maverick.mdl"
-//#define MDL_ROTOR			"models/w_models/weapons/w_eq_painpills.mdl"
-//#define MDL_ROTOR			"models/ghostanim.mdl"
-//#define MDL_ROTOR			"models/props_junk/barrel_fire.mdl"
-//#define MDL_ROTOR			"models/props_c17/oildrum001.mdl"
-//#define MDL_ROTOR			"models/props_collectables/coin.mdl"
-#define MDL_HELIY			"models/c2m5_helicopter_extraction/c2m5_helicopter.mdl"
+#define SND_AMMOPICKUP			"sound/items/itempickup.wav"
+#define SND_TIMEOUT				"ambient/machines/steam_release_2.wav"	//<< unused
 
-#define SND_TIMEOUT			"ambient/machines/steam_release_2.wav"
+#define DRONE_HEIGHT_HOOVER		20.0		// drone bounching up and down around this height measure from initail height
+#define DRONE_HEIGHT_INITIAL	60.0		// drone initial spawn height against his master
+#define MAXIMUM_SPEED			1000.0		// drone max forward speed.
+#define INTERVAL_LIFE			0.1			// timer interval tick rate
 
-#define BEAMSPRITE_BLOOD	"materials/sprites/bloodspray.vmt"
-#define BEAMSPRITE_BUBBLE	"materials/sprites/bubble.vmt"
-#define BEAMSPRITE_SKULL	"materials/sprites/skull_icon.vmt"
+ConVar	g_ConVarDroneEnable;
 
-ConVar	g_ConVarPetEnable;
 bool	g_bIsPetEnable;
 bool	g_bIsRoundStart;
+bool	g_bEnable_Chat			= true;		// toggle chat announce on off
 
-//int	g_iBeamSprite_Blood;
-//int 	g_iBeamSprite_Bubble;
+// gathling gun
+float	g_fGatling_Damage		= 20.0;		// value from 0.0 to 100.0 
+float	g_fGatling_Range		= 300.0;	// the name says it
 
-float	g_fDrone_Life[SIZE_ENTITY];
-float	g_fDrone_Force[SIZE_ENTITY][POS_THRUST_TOTAL];		// left right force on/off
-int		g_iDrone_Thrust[SIZE_ENTITY][POS_THRUST_TOTAL];
-int		g_iDroneEnvSteam[SIZE_ENTITY][POS_THRUST_TOTAL];	// cosmetic
+// perk health and ammo
+bool	g_bIsPerkEnable			= true;		// enable/disable perk
+float	g_fRecharge_Heal		= 60.0;		// how long heal button to fully rechange.. 60
+float	g_fRecharge_Ammo		= 40.0;		// how long ammo button to fully rechange.. 40
+float	g_fRecharge_Short		= 1.0;		// interval between recharge if button presss failed
+int		g_iHealthToAdd			= 5;		// amount of health to add per circle
+int		g_iAmmoToAdd			= 30;		// amount of ammo to add per circle
+
+float	g_fDrone_Life[SIZE];
+float	g_fButton_Life[SIZE][2];
+float	g_fDrone_Force[SIZE][ePOS_SIZE];					// force value for thruster
+int		g_iDrone_Perk[SIZE][ePERK_SIZE];					// perk button
+int		g_iDrone_Thrust[SIZE][ePOS_SIZE];					// entity thruster
+int		g_iDrone_EnvSteam[SIZE][ePOS_SIZE];					// cosmetic
+int		g_iDrone_Master[SIZE]			= { -1, ... };		// drone target to follow
+int		g_iDrone_Slave[SIZE]			= { -1, ... };		// drone helicopter, follow parent.
 int		g_iClient_Drone[MAXPLAYERS+1]	= { -1, ... };		// guess what.. your crush... :)
-int		g_iDroneMaster[SIZE_ENTITY]		= { -1, ... };		// guess what.. your crush... :)
-bool	g_bIsHittingWall[SIZE_ENTITY];
-///// debigging var ////
-//bool g_bIsTestedOnce	= false;
-int BestFriendForever;
 
+///// debigging var /////
+
+
+#define PLUGIN_NAME		"l4d2_drone"
+#define PLUGIN_VERSION	"0.0b"
+#define PLUGIN_TAG		"\x04[DRONE]:\x01"
 
 public Plugin myinfo =
 {
 	name		= PLUGIN_NAME,
 	author		= "GsiX",
-	description	= "Player pet",
+	description	= "Player drone.. pet.",
 	version		= PLUGIN_VERSION,
-	url			= ""
+	url			= "https://forums.alliedmods.net/showthread.php?t=328417"
 }
 
 public void OnPluginStart()
@@ -64,32 +74,32 @@ public void OnPluginStart()
 	FormatEx( plName, sizeof( plName ), "%s_version", PLUGIN_NAME );
 	
 	CreateConVar( plName, PLUGIN_VERSION, "Plugin version", FCVAR_DONTRECORD );
-	g_ConVarPetEnable	= CreateConVar( "l4d2_drone_enabled",	"1",	"0:Off, 1:On,  Toggle plugin on/off", FCVAR_SPONLY|FCVAR_NOTIFY);
-	AutoExecConfig( true, PLUGIN_NAME );
+	//g_ConVarDroneEnable	= CreateConVar( "l4d2_drone_enabled",	"1",	"0:Off, 1:On,  Toggle plugin on/off", FCVAR_SPONLY|FCVAR_NOTIFY );
+	g_ConVarDroneEnable	= CreateConVar( "l4d2_drone_enabled",	"1",	"0:Off, 1:On,  Toggle plugin on/off", FCVAR_DONTRECORD );
+	//AutoExecConfig( true, PLUGIN_NAME );
 	
-	HookEvent( "round_start",	EVENT_RoundStartEnd, EventHookMode_PostNoCopy );
-	HookEvent( "round_end",		EVENT_RoundStartEnd, EventHookMode_PostNoCopy );
+	HookEvent( "round_start",	EVENT_RoundStartEnd );
+	HookEvent( "round_end",		EVENT_RoundStartEnd );
 	HookEvent( "player_spawn",	EVENT_PlayerSpawnDeath );
 	HookEvent( "player_death",	EVENT_PlayerSpawnDeath );
 	
-	g_ConVarPetEnable.AddChangeHook( CVAR_Changed );
-	
+	g_ConVarDroneEnable.AddChangeHook( CVAR_Changed );
 	UpdateCVar();
 	
-	//bind f8 "say /pet_model 30"
-	RegAdminCmd( "pet_model", AdminModelSpawn,	ADMFLAG_GENERIC );
+	// bind f8 "say /drone_spawn 90"
+	RegAdminCmd( "drone_spawn", AdminDroneSpawn, ADMFLAG_GENERIC );
 	
-	//bind f7 "say /pet_home"
-	RegAdminCmd( "pet_home", AdminCallDrone,	ADMFLAG_GENERIC );
+	// bind f7 "say /drone_home"
+	RegAdminCmd( "drone_home", AdminDroneCall, ADMFLAG_GENERIC );
 	
-	//bind KP_INS "say /pet_move 0"
-	//bind KP_HOME "say /pet_move 1"
-	//bind KP_UPARROW "say /pet_move 2"
-	//bind KP_LEFTARROW "say /pet_move 3"
-	//bind KP_5 "say /pet_move 4"
-	//bind KP_END "say /pet_move 5"
-	//bind KP_DOWNARROW "say /pet_move 6"
-	RegAdminCmd( "pet_move", AdminModelMove,	ADMFLAG_GENERIC );
+	// bind KP_INS "say /pet_move 0"
+	// bind KP_HOME "say /pet_move 1"
+	// bind KP_UPARROW "say /pet_move 2"
+	// bind KP_LEFTARROW "say /pet_move 3"
+	// bind KP_5 "say /pet_move 4"
+	// bind KP_END "say /pet_move 5"
+	// bind KP_DOWNARROW "say /pet_move 6"
+	RegAdminCmd( "pet_move", AdminModelMove, ADMFLAG_GENERIC ); //<< developer command
 }
 
 public void OnMapStart()
@@ -100,17 +110,13 @@ public void OnMapStart()
 	PrecacheModel( MDL_ARM, true );
 	PrecacheModel( MDL_HELIY, true );
 	
+	PrecacheSound( SND_AMMOPICKUP, true );
 	PrecacheSound( SND_TIMEOUT, true );
-	
-	//PrecacheModel( BEAMSPRITE_BUBBLE, true );
-	//g_iBeamSprite_Blood	= PrecacheModel( BEAMSPRITE_BLOOD );
-	//g_iBeamSprite_Bubble	= PrecacheModel( BEAMSPRITE_BUBBLE );
-	//g_iBeamSprite_Skull	= PrecacheModel( BEAMSPRITE_SKULL );
 }
 
 public Action AdminModelMove( int client, any args )
 {
-	if ( IsValidSurvivor( client ))
+	if ( IsSurvivorValid( client ))
 	{
 		if ( args < 1 )
 		{
@@ -127,12 +133,14 @@ public Action AdminModelMove( int client, any args )
 			return Plugin_Handled;
 		}
 		
-		if( BestFriendForever > MaxClients && IsValidEntity( BestFriendForever ))
+		int drone = EntRefToEntIndex( g_iClient_Drone[client] );
+		int slave = EntRefToEntIndex( g_iDrone_Slave[drone] );
+		if( IsEntityValid( slave ))
 		{
 			float pos_start[3];
 			float ang_start[3];
-			GetEntOrigin( BestFriendForever, pos_start, 0.0 );
-			GetEntAngle( BestFriendForever, ang_start, 0.0, 0 );
+			GetEntOrigin( slave, pos_start, 0.0 );
+			GetEntAngle( slave, ang_start, 0.0, 0 );
 			if( move == 0 )
 			{
 				ReplyToCommand( client, "%s POS: %f | %f | %f", PLUGIN_TAG, pos_start[0], pos_start[1], pos_start[2] );
@@ -141,32 +149,32 @@ public Action AdminModelMove( int client, any args )
 			else if( move == 1 )
 			{
 				pos_start[0] += 1.0;
-				TeleportEntity( BestFriendForever, pos_start, NULL_VECTOR, NULL_VECTOR );
+				TeleportEntity( slave, pos_start, NULL_VECTOR, NULL_VECTOR );
 			}
 			else if( move == 2 )
 			{
 				pos_start[0] -= 1.0;
-				TeleportEntity( BestFriendForever, pos_start, NULL_VECTOR, NULL_VECTOR );
+				TeleportEntity( slave, pos_start, NULL_VECTOR, NULL_VECTOR );
 			}
 			else if( move == 3 )
 			{
 				pos_start[1] += 1.0;
-				TeleportEntity( BestFriendForever, pos_start, NULL_VECTOR, NULL_VECTOR );
+				TeleportEntity( slave, pos_start, NULL_VECTOR, NULL_VECTOR );
 			}
 			else if( move == 4 )
 			{
 				pos_start[1] -= 1.0;
-				TeleportEntity( BestFriendForever, pos_start, NULL_VECTOR, NULL_VECTOR );
+				TeleportEntity( slave, pos_start, NULL_VECTOR, NULL_VECTOR );
 			}
 			else if( move == 5 )
 			{
 				ang_start[1] += 1.0;
-				TeleportEntity( BestFriendForever, NULL_VECTOR, ang_start, NULL_VECTOR );
+				TeleportEntity( slave, NULL_VECTOR, ang_start, NULL_VECTOR );
 			}
 			else if( move == 6 )
 			{
 				ang_start[1] -= 1.0;
-				TeleportEntity( BestFriendForever, NULL_VECTOR, ang_start, NULL_VECTOR );
+				TeleportEntity( slave, NULL_VECTOR, ang_start, NULL_VECTOR );
 			}
 		}
 		else
@@ -177,9 +185,9 @@ public Action AdminModelMove( int client, any args )
 	return Plugin_Handled;
 }
 
-public Action AdminModelSpawn( int client, any args )
+public Action AdminDroneSpawn( int client, any args )
 {
-	if ( IsValidSurvivor( client ))
+	if ( IsSurvivorValid( client ))
 	{
 		if ( g_iClient_Drone[client] != -1 )
 		{
@@ -189,7 +197,7 @@ public Action AdminModelSpawn( int client, any args )
 		
 		if ( args < 1 )
 		{
-			ReplyToCommand( client, "%s Usage: pet_model 10(time in secs)", PLUGIN_TAG );
+			ReplyToCommand( client, "%s Usage: drone_spawn 10(time in secs)", PLUGIN_TAG );
 			return Plugin_Handled;
 		}
 		
@@ -208,32 +216,32 @@ public Action AdminModelSpawn( int client, any args )
 		
 		GetClientEyePosition( client, pos_start );
 		GetClientEyeAngles( client, ang_start );
-		bool gotpos = TraceRayGetEndpoint( pos_start, ang_start, client, pos_buffe );
-		if( gotpos )
+		if( TraceRayGetEndpoint( pos_start, ang_start, client, pos_buffe ))
 		{
-			pos_buffe[2] += DRONE_HEIGHT;
+			pos_buffe[2] += DRONE_HEIGHT_INITIAL;
 			ang_start[0] = 0.0;
 			ang_start[2] = 0.0;
 			int drone = CreateLovelyDrone( client, pos_buffe, ang_start, time );
-			if( drone > MaxClients && IsValidEntity( drone ))
+			if( IsEntityValid( drone ))
 			{
 				g_iClient_Drone[client] = EntIndexToEntRef( drone );
+				PrintToChatAll( "%s \x03Drone_%N \x01created", PLUGIN_TAG, client );
 			}
 		}
 	}
 	return Plugin_Handled;
 }
 
-public Action AdminCallDrone( int client, any args )
+public Action AdminDroneCall( int client, any args )
 {
-	if ( IsValidSurvivor( client ))
+	if ( IsSurvivorValid( client ))
 	{
 		int drone = EntRefToEntIndex( g_iClient_Drone[client] );
 		if( drone > 0 && IsValidEntity( drone ))
 		{
 			float pos[3];
 			float ang[3];
-			GetEntOrigin( client, pos, DRONE_HEIGHT );
+			GetEntOrigin( client, pos, DRONE_HEIGHT_INITIAL );
 			GetEntAngle( client, ang, 0.0, 0 );
 			TeleportEntity( drone, pos, ang, NULL_VECTOR );
 			ReplyToCommand( client, "%s Calling Drone home", PLUGIN_TAG );
@@ -253,17 +261,88 @@ public void CVAR_Changed( Handle convar, const char[] oldValue, const char[] new
 
 void UpdateCVar()
 {
-	g_bIsPetEnable = g_ConVarPetEnable.BoolValue;
+	g_bIsPetEnable = g_ConVarDroneEnable.BoolValue;
 }
 
 public Action OnPlayerRunCmd( int client, int& buttons, int& impulse, float vel[3], float angles[3], int& weapon )
 {
+	if (( buttons & IN_USE ) && g_bIsPerkEnable )
+	{
+		float pos_start[3];
+		float ang_start[3];
+		GetClientEyePosition( client, pos_start );
+		GetClientEyeAngles( client, ang_start );
+		int ent = TraceRayGetEntity( pos_start, ang_start, client );
+		if( IsEntityValid( ent ))
+		{
+			float pos_ent[3];
+			GetEntOrigin( ent, pos_ent, 0.0 );
+			float dist = GetVectorDistance( pos_ent, pos_start );
+			if( dist < 1100.0 )	//<< this number dont make sense
+			{
+				int drone = GetEntityParent( ent );
+				if( IsEntityValid( drone ) && GetOwner( drone ) == client )
+				{
+					char name[32];
+					GetEntityName( ent, name );
+					if( StrEqual( name, NAME_HEAL, false ) && g_fButton_Life[drone][ePERK_HEAL_BTN] == 0.0 )
+					{
+						int health[2];
+						float buffer[2];
+						GetPlayerHealth( client, health, buffer );
+						if( health[0] < 100 )
+						{
+							SetPerkButton( drone, ePERK_HEAL_BTN, g_fRecharge_Heal );
+							
+							health[0] += g_iHealthToAdd;
+							if( health[0] >= 100 )
+							{
+								health[0] = 100;
+								buffer[0] = 0.0;
+							}
+							
+							if( buffer[0] > 0.0 )
+							{
+								int health_new = health[0] + RoundToFloor( buffer[0] );
+								if( health_new > 100.0 )
+								{
+									buffer[0] = 100.0 - float( health[0] );
+								}
+							}
+							SetPlayerHealth( client, health[0], buffer[0] );
+							if( g_bEnable_Chat ) { PrintToChat( client, "%s Health added: \x05%d", PLUGIN_TAG, g_iHealthToAdd ); }
+						}
+						else
+						{
+							SetPerkButton( drone, ePERK_HEAL_BTN, g_fRecharge_Short );
+							if( g_bEnable_Chat ) { PrintToChat( client, "%s You still healty", PLUGIN_TAG );}
+						}
+					}
+					else if( StrEqual( name, NAME_AMMO, false ) && g_fButton_Life[drone][ePERK_AMMO_BTN] == 0.0 )
+					{
+						if( GiveSurvivorAmmo( client, g_iAmmoToAdd ))
+						{
+							SetPerkButton( drone, ePERK_AMMO_BTN, g_fRecharge_Ammo );
+							EmitSoundToClient( client, SND_AMMOPICKUP );
+							if( g_bEnable_Chat ) { PrintToChat( client, "%s Ammo added: \x05%d", PLUGIN_TAG, g_iAmmoToAdd ); }
+						}
+						else
+						{
+							SetPerkButton( drone, ePERK_AMMO_BTN, g_fRecharge_Short );
+							if( g_bEnable_Chat ) { PrintToChat( client, "%s Equip primary weapon first", PLUGIN_TAG ); }
+						}
+					}
+				}
+			}
+		}
+	}
+	
 	if (( buttons & IN_USE ) && ( buttons & IN_ATTACK2 ))
 	{
-		if( IsValidSurvivor( client ))
+		if( IsSurvivorValid( client ))
 		{
 			int pet = EntRefToEntIndex( g_iClient_Drone[client] );
-			if( pet > MaxClients && IsValidEntity( pet ))
+			if( IsEntityValid( pet ))
 			{
 				float pos[3];
 				float ang[3];
@@ -272,11 +351,30 @@ public Action OnPlayerRunCmd( int client, int& buttons, int& impulse, float vel[
 				int target = TraceRayGetEntity( pos, ang, client );
 				if( target > 0 && IsValidEdict( target ))
 				{
-					g_iDroneMaster[pet] = EntIndexToEntRef( target );
+					
+					int newtarget = EntIndexToEntRef( target );
+					if( g_iDrone_Master[pet] != newtarget && g_bEnable_Chat )	 // anti spam
+					{
+						if( target < MaxClients )
+						{
+							PrintToChat( client, "%s Acquiring target \x05%N", PLUGIN_TAG, target );
+						}
+						else
+						{
+							char entName[16];
+							GetEntityClassname( target, entName, sizeof( entName ));
+							PrintToChat( client, "%s Acquiring target \x05%s", PLUGIN_TAG, entName );
+						}
+					}
+					g_iDrone_Master[pet] = newtarget;
 				}
 				else
 				{
-					g_iDroneMaster[pet] = -1;
+					if( g_iDrone_Master[pet] != -1 && g_bEnable_Chat ) // anti spam
+					{
+						PrintToChat( client, "%s Target cancled", PLUGIN_TAG );
+					}
+					g_iDrone_Master[pet] = -1;
 				}
 			}
 		}
@@ -302,7 +400,7 @@ public void EVENT_PlayerSpawnDeath( Event event, const char[] name, bool dontBro
 	
 	int userid = event.GetInt( "userid" );
 	int client = GetClientOfUserId( userid );
-	if ( IsValidSurvivor( client ))
+	if ( IsSurvivorValid( client ))
 	{
 		if( StrEqual( name, "player_spawn", false ))
 		{
@@ -318,10 +416,10 @@ public void EVENT_PlayerSpawnDeath( Event event, const char[] name, bool dontBro
 
 int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 {
-	int drone = CreateParent( MDL_DUMMY, pos, ang, 0.01 );
-	if( drone != -1 )
+	int drone = CreatePropPhysicsOverride( MDL_DUMMY, pos, ang, 0.01 );
+	if( IsEntityValid( drone ))
 	{
-		g_iDroneMaster[drone] = -1;
+		g_iDrone_Master[drone] = -1;
 		SetOwner( drone, owner );
 		
 		float pos_attch[4][3];
@@ -331,42 +429,43 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		float ang_start		= 45.0;
 		float ang_incre		= 90.0;
 		
-		int i, temp, dummy;
 		///////////////////////////////////////
 		//////////////// ROTOR ////////////////
 		///////////////////////////////////////
-		for( i = POS_ROTOR_1; i <= POS_ROTOR_4; i++ )
+		int temp, dummy;
+		for( int i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
 		{
 			// thrust to lift our drone at 4 arm pos. we build 1 by 1
-			SetArray3DFloat( 0.0, 0.0, 0.0, pos_attch[i] );
+			SetVector( 0.0, 0.0, 0.0, pos_attch[i] );
 			GetLocalAttachmentPos( ang_start, (arm_length - 2.0), pos_attch[i] );
-			pos_attch[i][2] = 1.0; 
-			SetArray3DFloat( -90.0, ang_start, 0.0, ang_adjust );
-			CreateSkin( drone, MDL_ARM, pos_attch[i], ang_adjust, 0.65, g_iColor_White, 255 );
 			
-			SetArray3DFloat( 0.0, 0.0, 0.0, pos_attch[i] );
+			pos_attch[i][2] = 1.0; 
+			SetVector( -90.0, ang_start, 0.0, ang_adjust );
+			CreatePropDynamicOverride( drone, MDL_ARM, pos_attch[i], ang_adjust, 0.65, g_iColor_White, 255 );
+			
+			SetVector( 0.0, 0.0, 0.0, pos_attch[i] );
 			GetLocalAttachmentPos( ang_start, arm_length, pos_attch[i] );
 			
 			// rotor force
-			SetArray3DFloat( -90.0, 0.0, 0.0, ang_adjust );
+			SetVector( -90.0, 0.0, 0.0, ang_adjust );
 			g_fDrone_Force[drone][i] = FORCE_UPWARD;
 			temp = CreateThrust( drone, pos_attch[i], ang_adjust, g_fDrone_Force[drone][i] );
-			g_iDrone_Thrust[drone][i] = EntIndexToEntRef( temp );
+			SaveDroneEntity( drone, temp, g_iDrone_Thrust, i );
 			
 			// crocodile model, act as rotor parent
-			SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
-			dummy = CreateSkin( drone, MDL_DUMMY, pos_attch[i], ang_adjust, 0.01, g_iColor_White, 0 );
+			SetVector( 0.0, 0.0, 0.0, ang_adjust );
+			dummy = CreatePropDynamicOverride( drone, MDL_DUMMY, pos_attch[i], ang_adjust, 0.01, g_iColor_White, 0 );
 			
-			// exaust skin coke can
-			SetArray3DFloat( 0.0, 0.0, 1.0, pos_origin );
-			SetArray3DFloat( 180.0, 0.0, 0.0, ang_adjust );
-			CreateSkin( dummy, MDL_ROTOR, pos_origin, ang_adjust, 1.0, g_iColor_Red, 255 );
+			// rotor skin coke can
+			SetVector( 0.0, 0.0, 1.0, pos_origin );
+			SetVector( 180.0, 0.0, 0.0, ang_adjust );
+			CreatePropDynamicOverride( dummy, MDL_ROTOR, pos_origin, ang_adjust, 1.0, g_iColor_Red, 255 );
 			
-			// exaust env_steam
-			SetArray3DFloat( 0.0, 0.0, -3.0, pos_origin );
-			SetArray3DFloat( 90.0, 0.0, 0.0, ang_adjust );
+			// rotor exaust env_steam
+			SetVector( 0.0, 0.0, -3.0, pos_origin );
+			SetVector( 90.0, 0.0, 0.0, ang_adjust );
 			temp = CreateEnvSteam( dummy, pos_origin, ang_adjust, g_iColor_Exaust );
-			g_iDroneEnvSteam[drone][i] = EntIndexToEntRef( temp );
+			SaveDroneEntity( drone, temp, g_iDrone_EnvSteam, i );
 			
 			ang_start += ang_incre;
 		}
@@ -375,107 +474,122 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		///////////////////////////////////////
 		///////////////// TAIL ////////////////
 		///////////////////////////////////////
-		// thrust move forward
-		SetArray3DFloat( -18.0, -2.5, -1.0, pos_origin );
-		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_MAIN1] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_MAIN1] );
-		g_iDrone_Thrust[drone][POS_THRUST_MAIN1] = EntIndexToEntRef( temp );
-		SetArray3DFloat( 180.0, 0.0, 0.0, ang_adjust );
+		// tail env_steam
+		SetVector( -18.0, -2.5, -1.0, pos_origin );
+		SetVector( 180.0, 0.0, 0.0, ang_adjust );
 		temp = CreateEnvSteam( drone, pos_origin, ang_adjust, g_iColor_Exaust );
-		g_iDroneEnvSteam[drone][POS_THRUST_MAIN1] = EntIndexToEntRef( temp );
+		SaveDroneEntity( drone, temp, g_iDrone_EnvSteam, ePOS_EXAUST_LEFT );
 		
-		SetArray3DFloat( -18.0, 2.5, -1.0, pos_origin );
-		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_MAIN2] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_MAIN2] );
-		g_iDrone_Thrust[drone][POS_THRUST_MAIN2] = EntIndexToEntRef( temp );
-		SetArray3DFloat( 180.0, 0.0, 0.0, ang_adjust );
+		SetVector( -18.0, 2.5, -1.0, pos_origin );
+		SetVector( 180.0, 0.0, 0.0, ang_adjust );
 		temp = CreateEnvSteam( drone, pos_origin, ang_adjust, g_iColor_Exaust );
-		g_iDroneEnvSteam[drone][POS_THRUST_MAIN2] = EntIndexToEntRef( temp );
+		SaveDroneEntity( drone, temp, g_iDrone_EnvSteam, ePOS_EXAUST_RIGHT );
 		
 		
 		///////////////////////////////////////
 		////////////// NAVIGATION /////////////
 		///////////////////////////////////////
-		// thrust to move against east
-		SetArray3DFloat( 0.0, 15.0, 0.0, pos_origin );
-		SetArray3DFloat( 0.0, ANGLE_WEST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_EAST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_EAST] );
-		g_iDrone_Thrust[drone][POS_THRUST_EAST] = EntIndexToEntRef( temp );
+		// thrust push forward
+		SetVector( -2.0, 0.0, 0.0, pos_origin );
+		SetVector( 0.0, 0.0, 0.0, ang_adjust );
+		g_fDrone_Force[drone][ePOS_ENGINE] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_ENGINE] );
+		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_ENGINE );
 		
-		// thrust to move against nort east
-		SetArray3DFloat( 15.0, 15.0, 0.0, pos_origin );
-		SetArray3DFloat( 0.0, ANGLE_NTWEST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_NTEAST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_NTEAST] );
-		g_iDrone_Thrust[drone][POS_THRUST_NTEAST] = EntIndexToEntRef( temp );
+		// thrust to push left right, force positive move right, negative left
+		SetVector( 0.0, 1.0, 0.0, pos_origin );
+		SetVector( 0.0, ANGLE_EAST, 0.0, ang_adjust );
+		g_fDrone_Force[drone][ePOS_SLATS] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_SLATS] );
+		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_SLATS );
 		
-		// thrust to move against nort
-		SetArray3DFloat( 15.0, 0.0, 0.0, pos_origin );
-		SetArray3DFloat( 0.0, 180.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_NORTN] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_NORTN] );
-		g_iDrone_Thrust[drone][POS_THRUST_NORTN] = EntIndexToEntRef( temp );
+		// thrust to push against nort east
+		SetVector( 1.0, 1.0, 0.0, pos_origin );
+		SetVector( 0.0, ANGLE_NTEAST, 0.0, ang_adjust );
+		g_fDrone_Force[drone][ePOS_NORTH_EAST] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_NORTH_EAST] );
+		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_NORTH_EAST );
 		
-		// thrust to move against nort west
-		SetArray3DFloat( -15.0, 15.0, 0.0, pos_origin );
-		SetArray3DFloat( 0.0, ANGLE_NTEAST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_NTWEST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_NTWEST] );
-		g_iDrone_Thrust[drone][POS_THRUST_NTWEST] = EntIndexToEntRef( temp );
-		
-		// thrust to move left
-		SetArray3DFloat( 0.0, -15.0, 0.0, pos_origin );
-		SetArray3DFloat( 0.0, ANGLE_EAST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_WEST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_WEST] );
-		g_iDrone_Thrust[drone][POS_THRUST_WEST] = EntIndexToEntRef( temp );
+		// thrust to push against nort west
+		SetVector( 1.0, -1.0, 0.0, pos_origin );
+		SetVector( 0.0, ANGLE_NTWEST, 0.0, ang_adjust );
+		g_fDrone_Force[drone][ePOS_NORTH_WEST] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_NORTH_WEST] );
+		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_NORTH_WEST );
 		
 		// thrust to rotate left right
-		SetArray3DFloat( 0.0, 0.0, 0.0, pos_origin );
-		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][POS_THRUST_ROTATE] = FORCE_NONE;
-		temp = CreateTorque( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][POS_THRUST_ROTATE] );
-		g_iDrone_Thrust[drone][POS_THRUST_ROTATE] = EntIndexToEntRef( temp );
+		SetVector( -1.0, 0.0, 0.0, pos_origin );
+		SetVector( 0.0, 0.0, 0.0, ang_adjust );
+		g_fDrone_Force[drone][ePOS_RUDDER] = FORCE_NONE;
+		temp = CreateTorque( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_RUDDER] );
+		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_RUDDER );
 		
 		
 		///////////////////////////////////////
 		/////////////// COSMETIC //////////////
 		///////////////////////////////////////
 		// body F18 main skin what appear to player
-		SetArray3DFloat( -7.0, 0.0, 0.0, pos_origin );
-		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
-		CreateSkin( drone, MDL_BODY, pos_origin, ang_adjust, 0.05, g_iColor_White, 255 );
+		SetVector( -7.0, 0.0, 0.0, pos_origin );
+		SetVector( 0.0, 0.0, 0.0, ang_adjust );
+		CreatePropDynamicOverride( drone, MDL_BODY, pos_origin, ang_adjust, 0.05, g_iColor_White, 255 );
 		
 		// small small Helicopter
-		SetArray3DFloat( 74.0, 104.0, 10.0, pos_origin );
-		SetArray3DFloat( 0.0, 91.0, 0.0, ang_adjust );
-		BestFriendForever = CreatEntAnimation( drone, MDL_HELIY, "hover1", pos_origin, ang_adjust, 0.03 );
+		SetVector( 74.0, 104.0, 10.0, pos_origin );
+		SetVector( 0.0, 91.0, 0.0, ang_adjust );
+		temp = CreatEntAnimation( drone, MDL_HELIY, "hover1", pos_origin, ang_adjust, 0.03 );
+		g_iDrone_Slave[drone] = EntIndexToEntRef( temp );
+		
+		
+		///////////////////////////////////////
+		//////////////// BUTTON ///////////////
+		///////////////////////////////////////
+		if( g_bIsPerkEnable )
+		{
+			// button for the ammo and health keypress.. prop dynamic just wont stop ray trace //<< need fix
+			SetVector( 15.0, 0.0, 0.0, pos_origin );
+			SetVector( 0.0, 90.0, 170.0, ang_adjust );
+			temp = CreateButton( drone, MDL_DUMMY, NAME_HEAL, pos_origin, ang_adjust, 0.25, g_iColor_Green, 0 ); // health
+			g_iDrone_Perk[drone][ePERK_HEAL_BTN] = EntIndexToEntRef( temp );
+			
+			SetVector( 15.0, 0.0, -5.0, pos_origin );
+			SetVector( 90.0, 0.0, 0.0, ang_adjust );
+			temp = CreateLight( drone, pos_origin, ang_adjust, g_iColor_Green );
+			g_iDrone_Perk[drone][ePERK_HEAL_LIGHT] = EntIndexToEntRef( temp );
+			
+			SetVector( -10.0, 0.0, -2.0, pos_origin );
+			SetVector( 0.0, 90.0, 170.0, ang_adjust );
+			temp = CreateButton( drone, MDL_DUMMY, NAME_AMMO, pos_origin, ang_adjust, 0.25, g_iColor_Green, 0 ); // ammo
+			g_iDrone_Perk[drone][ePERK_AMMO_BTN] = EntIndexToEntRef( temp );
+			
+			SetVector( -10.0, 0.0, -7.0, pos_origin );
+			SetVector( 90.0, 0.0, 0.0, ang_adjust );
+			temp = CreateLight( drone, pos_origin, ang_adjust, g_iColor_Blue );
+			g_iDrone_Perk[drone][ePERK_AMMO_LIGHT] = EntIndexToEntRef( temp );
+			SetPerkButton( drone, ePERK_HEAL_BTN, g_fRecharge_Heal );
+			SetPerkButton( drone, ePERK_AMMO_BTN, g_fRecharge_Ammo );
+		}
 		
 		///////////////////////////////////////
 		////////////////// GUN ////////////////
 		///////////////////////////////////////
-		// Gatling Gun
-		SetArray3DFloat( 25.0, 0.0, -5.0, pos_origin );
-		CreateGatlingGun( drone, pos_origin, ang_adjust, 0.1, 300.0 );
+		// Gatling Gun << if the perk button model too big, it will block this gun, be mind
+		SetVector( 30.0, 0.0, -10.0, pos_origin );
+		CreateGatlingGun( drone, pos_origin, ang_adjust, g_fGatling_Damage, g_fGatling_Range );
 		
 		
 		///////////////////////////////////////
 		/////////////// CONSTRAIN /////////////
 		///////////////////////////////////////
 		// constrain our drone to always stand upward
-		SetArray3DFloat( 90.0, 0.0, 0.0, ang_adjust );
+		SetVector( 90.0, 0.0, 0.0, ang_adjust );
 		CreateUprightLifting( drone, pos_origin, ang_adjust );
 		
 		// constrain our drone to always stand flat against world
-		SetArray3DFloat( 0.0, 0.0, 0.0, ang_adjust );
+		SetVector( 0.0, 0.0, 0.0, ang_adjust );
 		CreateUprightConstrain( drone, pos_origin, ang_adjust );
 		
 		g_fDrone_Life[drone] = life;
 		CreateTimer( INTERVAL_LIFE, Timer_DroneThink, EntIndexToEntRef( drone ), TIMER_REPEAT );
-		PrintToChat( owner, "%s Drone created", PLUGIN_TAG );
 	}
 	return drone;
 }
@@ -483,52 +597,81 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 public Action Timer_DroneThink( Handle timer, any entref )
 {
 	int entity = EntRefToEntIndex( entref );
-	if ( entity > MaxClients && IsValidEntity( entity ))
+	if ( IsEntityValid( entity ))
 	{
-		if( g_fDrone_Life[entity] > 0.0 && g_bIsRoundStart )
+		int client = GetOwner( entity );
+		if( IsSurvivorValid( client ))
 		{
-			g_fDrone_Life[entity] -= INTERVAL_LIFE;
-			
-			int client = GetOwner( entity );
-			if( IsValidSurvivor( client ))
+			if( g_fDrone_Life[entity] > 0.0 && g_bIsRoundStart )
 			{
+				g_fDrone_Life[entity] -= INTERVAL_LIFE;
+				
+				if( g_bIsPerkEnable )
+				{
+					if( g_fButton_Life[entity][ePERK_HEAL_BTN] > 0.0 )
+					{
+						g_fButton_Life[entity][ePERK_HEAL_BTN] -= INTERVAL_LIFE;
+						if( g_fButton_Life[entity][ePERK_HEAL_BTN] <= 0.0 )
+						{
+							SetPerkButton( entity, ePERK_HEAL_BTN, 0.0 );
+						}
+					}
+					if( g_fButton_Life[entity][ePERK_AMMO_BTN] > 0.0 )
+					{
+						g_fButton_Life[entity][ePERK_AMMO_BTN] -= INTERVAL_LIFE;
+						if( g_fButton_Life[entity][ePERK_AMMO_BTN] <= 0.0 )
+						{
+							SetPerkButton( entity, ePERK_AMMO_BTN, 0.0 );
+						}
+					}
+				}
+				
 				float pos_entity[3];
 				float pos_target[3];
 				GetEntOrigin( entity, pos_entity, 0.0 );
-				GetEntOrigin( client, pos_target, DRONE_HEIGHT );
+				GetEntOrigin( client, pos_target, DRONE_HEIGHT_INITIAL );
 				
-				if( g_iDroneMaster[entity] != -1 )
+				if( g_iDrone_Master[entity] != -1 )
 				{
-					int target = EntRefToEntIndex( g_iDroneMaster[entity] );
+					int target = EntRefToEntIndex( g_iDrone_Master[entity] );
 					if( target > 0 && IsValidEdict( target ))
 					{
-						GetEntOrigin( target, pos_target, DRONE_HEIGHT );
+						GetEntOrigin( target, pos_target, DRONE_HEIGHT_INITIAL );
 					}
 					else
 					{
-						g_iDroneMaster[entity] = -1;
-						PrintToChat( client, "%s Target cleared", PLUGIN_TAG );
+						g_iDrone_Master[entity] = -1;
+						if( g_bEnable_Chat ) { PrintToChat( client, "%s Target cleared", PLUGIN_TAG );}
 					}
 				}
 				
 				Think_Lifting( entity, pos_entity, pos_target );
 				Think_Direction( entity, pos_entity, pos_target );
-				Think_Forward( entity, pos_entity, pos_target );
-				Think_SideObstackle( entity, POS_THRUST_EAST, ANGLE_EAST, pos_entity );
-				Think_SideObstackle( entity, POS_THRUST_WEST, ANGLE_WEST, pos_entity );
+
+				float ang_entity[3];
+				float pos_scanner[3];
+				float distance[eDIR_SIZE] = { 1000.0, ... };
+				GetEntOrigin( entity, pos_scanner, 2.0 ); //<< lift the sscanner 2 unit so it not hit the perk button
+				GetEntAngle( entity, ang_entity, 0.0, 0 );
+				Think_Scanner( entity, pos_scanner, ang_entity, distance );
 				
-				Think_FrontObstackle( entity, POS_THRUST_NTEAST, ANGLE_NTEAST, pos_entity );
-				Think_FrontObstackle( entity, POS_THRUST_NORTN, ANGLE_NORTH, pos_entity );
-				Think_FrontObstackle( entity, POS_THRUST_NTWEST, ANGLE_NTWEST, pos_entity );
+				Think_Forward( entity, pos_entity, pos_target, distance[eDIR_NORTH] );
+				Think_Obstacle45( entity, ePOS_NORTH_EAST, distance[eDIR_NORTH_EAST] ); //<< might have a problem on narrow path.. she will not enter
+				Think_Obstacle45( entity, ePOS_NORTH_WEST, distance[eDIR_NORTH_WEST] ); //<< might have a problem on narrow path.. she will not enter
 				
+				// only 1 side sensor active at a time for the gear animation to play
+				// shorter distance win
+				float direction	= -1.0;
+				float walldist	= distance[eDIR_EAST];
+				if( distance[eDIR_WEST] < distance[eDIR_EAST] )
+				{
+					direction = 1.0;
+					walldist = distance[eDIR_WEST];
+				}
+				Think_Obstacle90( entity, ePOS_SLATS, walldist, direction );
 				return Plugin_Continue;
 			}
-		}
-		
-		int owner = GetOwner( entity );
-		if( IsValidSurvivor( owner ))
-		{
-			g_iClient_Drone[owner] = -1;
+			g_iClient_Drone[client] = -1;
 		}
 		Entity_KillHierarchy( entity );
 	}
@@ -537,56 +680,53 @@ public Action Timer_DroneThink( Handle timer, any entref )
 
 void Think_Lifting( int entity, float pos_entity[3], float pos_target[3] )
 {
-	float center	= 20.0;
-	float distance	= pos_entity[2] - pos_target[2];
-	
 	// positive value apply force push downward
 	// negative value apply force push upward
 	float tolerance = 5.0;
-	float direction = distance - center;
+	float distance	= pos_entity[2] - pos_target[2];
+	float direction = distance - DRONE_HEIGHT_HOOVER;
 	if( direction > (tolerance * -1.0 ) && direction < tolerance )
 	{
 		direction = FORCE_FALL * -1.0;
 	}
 	
 	float force = FORCE_UPWARD - direction;
-	if( g_fDrone_Force[entity][POS_ROTOR_1] != force )
+	if( g_fDrone_Force[entity][ePOS_ROTOR_1] != force )
 	{
 		int temp;
-		for( int i = POS_ROTOR_1; i <= POS_ROTOR_4; i++ )
+		for( int i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
 		{
 			g_fDrone_Force[entity][i] = force;
 			temp = EntRefToEntIndex( g_iDrone_Thrust[entity][i] );
-			if( temp > MaxClients && IsValidEntity( temp ))
+			if( IsEntityValid( temp ))
 			{
 				SetThrusterTorque( temp, force );
 			}
 			
-			temp = EntRefToEntIndex( g_iDroneEnvSteam[entity][i] );
-			if( temp > MaxClients && IsValidEntity( temp ))
+			temp = EntRefToEntIndex( g_iDrone_EnvSteam[entity][i] );
+			if( IsEntityValid( temp ))
 			{
 				if( force < 180.0 )
 				{
-					SetSteamLength( temp, STEAM_LEN_IDLE );
+					SetSteamLength( temp, ENVSTEAM_IDLE );
 				}
 				else if( force < 203.0 )
 				{
-					SetSteamLength( temp, STEAM_LEN_THRUST1 );
+					SetSteamLength( temp, ENVSTEAM_GEARONE );
 				}
 				else
 				{
-					SetSteamLength( temp, STEAM_LEN_THRUST2 );
+					SetSteamLength( temp, ENVSTEAM_GEARTWO );
 				}
 			}
 		}
 	}
-	//PrintToChatAll( "force: %f ", force );
 }
 
 void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 {
 	float pos_buff[3];
-	SetArray3DFloat( pos_target[0], pos_target[1], pos_entity[2], pos_buff );
+	SetVector( pos_target[0], pos_target[1], pos_entity[2], pos_buff );
 	
 	float ang_entity[3];
 	float ang_guide[3];
@@ -595,7 +735,7 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 	NormalizeVector( ang_guide, ang_guide );
 	GetVectorAngles( ang_guide, ang_guide );
 	
-	float tolerance = 2.0;
+	float tolerance = 5.0;
 	float direction = AngleDifference( ang_guide[1], ang_entity[1] ) * -1.0;
 	if( direction > (tolerance * -1.0 ) && direction < tolerance )
 	{
@@ -606,11 +746,11 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 	// positive value turn left
 	float force = FORCE_ROTATE * direction;
 	
-	if( g_fDrone_Force[entity][POS_THRUST_ROTATE] != force )
+	if( g_fDrone_Force[entity][ePOS_RUDDER] != force )
 	{
-		g_fDrone_Force[entity][POS_THRUST_ROTATE] = force;
+		g_fDrone_Force[entity][ePOS_RUDDER] = force;
 		
-		int length = STEAM_LEN_IDLE;
+		int length = ENVSTEAM_IDLE;
 		float ang_ang[3] = { 180.0, 0.0, 0.0 };
 		if( force == FORCE_NONE )
 		{
@@ -618,17 +758,24 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 		}
 		else
 		{
-			length = STEAM_LEN_THRUST1;
-			ang_ang[AXIS_YAW] = GEAR_LEFT;
+			length = ENVSTEAM_GEARONE;
+			ang_ang[AXIS_YAW] = GEAR_ONE;
+			
+			// we not fly forward at high velocity. show aggresive tail animation.
+			if( g_fDrone_Force[entity][ePOS_ENGINE] < 200.0 )
+			{
+				ang_ang[AXIS_YAW] = GEAR_TWO;
+			}
+			
 			if( force > FORCE_NONE )
 			{
-				ang_ang[AXIS_YAW] = GEAR_RIGHT;
+				ang_ang[AXIS_YAW] *= -1.0;
 			}
 		}
 
-		int temp1 = EntRefToEntIndex( g_iDroneEnvSteam[entity][POS_THRUST_MAIN1] );
-		int temp2 = EntRefToEntIndex( g_iDroneEnvSteam[entity][POS_THRUST_MAIN2] );
-		if( temp1 > MaxClients && temp2 > MaxClients && IsValidEntity( temp1 ) && IsValidEntity( temp2 ))
+		int temp1 = EntRefToEntIndex( g_iDrone_EnvSteam[entity][ePOS_EXAUST_LEFT] );
+		int temp2 = EntRefToEntIndex( g_iDrone_EnvSteam[entity][ePOS_EXAUST_RIGHT] );
+		if( IsEntityValid( temp1 ) && IsEntityValid( temp2 ))
 		{
 			TeleportEntity( temp1, NULL_VECTOR, ang_ang, NULL_VECTOR );
 			TeleportEntity( temp2, NULL_VECTOR, ang_ang, NULL_VECTOR );
@@ -636,22 +783,73 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 			SetSteamLength( temp2, length );
 		}
 		
-		int temp = EntRefToEntIndex( g_iDrone_Thrust[entity][POS_THRUST_ROTATE] );
-		if( temp > MaxClients && IsValidEntity( temp ))
+		int temp = EntRefToEntIndex( g_iDrone_Thrust[entity][ePOS_RUDDER] );
+		if( IsEntityValid( temp ))
 		{
 			SetThrusterTorque( temp, force );
 		}
 	}
 }
 
-void Think_Forward( int entity, float pos_entity[3], float pos_target[3] )
+void Think_Scanner( int entity, float pos_entity[3], float ang_entity[3], float distance[eDIR_SIZE] )
+{
+	float vec_temp[3];
+	float dist_new;
+	for( float i = ANGLE_EAST; i <= ANGLE_WEST; i += ANGLE_INCREMENT )
+	{
+		SetVector( ang_entity[0], ang_entity[1], ang_entity[2], vec_temp );
+		vec_temp[AXIS_YAW] += i;
+		if( TraceRayGetEndpoint( pos_entity, vec_temp, entity, vec_temp ))
+		{
+			dist_new = GetVectorDistance( pos_entity, vec_temp );
+			if( i <= ANGLE_NTEAST )
+			{
+				if( dist_new < distance[eDIR_EAST] )
+				{
+					distance[eDIR_EAST] = dist_new;
+				}
+			}
+			else if( i > ANGLE_NTEAST && i <= ANGLE_NORTH_R )
+			{
+				if( dist_new < distance[eDIR_NORTH_EAST] )
+				{
+					distance[eDIR_NORTH_EAST] = dist_new;
+				}
+			}
+			else if( i > ANGLE_NORTH_R && i < ANGLE_NORTH_L )
+			{
+				if( dist_new < distance[eDIR_NORTH] )
+				{
+					distance[eDIR_NORTH] = dist_new;
+				}
+			}
+			else if( i >= ANGLE_NORTH_L && i < ANGLE_NTWEST )
+			{
+				if( dist_new < distance[eDIR_NORTH_WEST] )
+				{
+					distance[eDIR_NORTH_WEST] = dist_new;
+				}
+			}
+			else
+			{
+				if( dist_new < distance[eDIR_WEST] )
+				{
+					distance[eDIR_WEST] = dist_new;
+				}
+			}
+		}
+	}
+}
+
+void Think_Forward( int entity, float pos_entity[3], float pos_target[3], float dist_North )
 {
 	float vec_buff[3];
-	SetArray3DFloat( pos_target[0], pos_target[1], pos_entity[2], vec_buff );
+	SetVector( pos_target[0], pos_target[1], pos_entity[2], vec_buff );
 	float dist	= GetVectorDistance( pos_entity, vec_buff );
 	float force	= FORCE_NONE;
-
-	if( dist > 100.0 && !g_bIsHittingWall[entity] )
+	
+	// thruster go forward
+	if( dist > 100.0 )
 	{
 		force = FORCE_FORWARD * dist;
 		if( force > MAXIMUM_SPEED )
@@ -660,162 +858,137 @@ void Think_Forward( int entity, float pos_entity[3], float pos_target[3] )
 		}
 	}
 	
-	if( g_fDrone_Force[entity][POS_THRUST_MAIN1] != force )
+	// front have obstacle, negate engine thrust force
+	if( dist_North <= SAFE_RADIUS1 )
 	{
-		g_fDrone_Force[entity][POS_THRUST_MAIN1] = force;
-		g_fDrone_Force[entity][POS_THRUST_MAIN2] = force;
-		
-		float gear;
-		int i, exaust, parent, length;
-		for( i = 0; i < 4; i++ )
+		dist = dist_North;
+		float mult = (SAFE_RADIUS1 - dist_North) * SAFE_MULTIPLIER;
+		if( mult < 0.0 )
 		{
-			exaust = EntRefToEntIndex( g_iDroneEnvSteam[entity][i] );
-			if( exaust > MaxClients && IsValidEntity( exaust ))
-			{
-				gear = GEAR_NONE;
-				length = STEAM_LEN_IDLE;
-				if( force != FORCE_NONE )
-				{
-					gear = GEAR_FORWARD;
-					length = STEAM_LEN_THRUST1;
-				}
-				parent = GetEntityParent( exaust );
-				GetEntAngle( parent, vec_buff, 0.0, 0 );
-				vec_buff[0] = gear;
-				TeleportEntity( parent, NULL_VECTOR, vec_buff, NULL_VECTOR );
-				SetSteamLength( exaust, length );
-			}
+			mult = 0.0;
+		}
+		
+		force = FORCE_OBSTACLE * mult * -1.0;
+		//PrintToChatAll( "%s Force %f | Direction %s", PLUGIN_TAG, ( force > 0.0 ? "Forward":"Reverse"));
+	}
+	
+	if( g_fDrone_Force[entity][ePOS_ENGINE] != force )
+	{
+		g_fDrone_Force[entity][ePOS_ENGINE] = force;
+		SetRotorGear( entity, ePOS_ENGINE, force, dist );
+		int thrust = EntRefToEntIndex( g_iDrone_Thrust[entity][ePOS_ENGINE] );
+		if( IsEntityValid( thrust ))
+		{
+			SetThrusterTorque( thrust, force );
 		}
 		/*
-		if( g_fDrone_Force[entity][POS_THRUST_MAIN1] == FORCE_NONE )
+		if( g_fDrone_Force[entity][ePOS_ENGINE] == FORCE_NONE && g_fDrone_Force[entity][ePOS_RUDDER] == FORCE_NONE )
 		{
 			EmitSoundToAll( SND_TIMEOUT, entity, SNDCHAN_AUTO );
 		}*/
-		SetThrusterTorque( g_iDrone_Thrust[entity][POS_THRUST_MAIN1], force );
-		SetThrusterTorque( g_iDrone_Thrust[entity][POS_THRUST_MAIN2], force );
+		//PrintToChatAll( "Dist: %f | Force: %f", dist, force );
 	}
 }
 
-void Think_SideObstackle( int entity, int direction, float rotation, float pos_entity[3] )
+void Think_Obstacle45( int entity, int region, float distance )
 {
-	// sensor wall left, front, right
-	float ang_start[3];
-	float pos_output[3];
-	GetEntAngle( entity, ang_start, rotation, AXIS_YAW );
-	
-	bool gotpos = TraceRayGetEndpoint( pos_entity, ang_start, entity, pos_output );
-	if( gotpos )
+	float force = FORCE_NONE;
+	if( distance <= SAFE_RADIUS1 )
 	{
-		float force = 0.0;
-		float dist = GetVectorDistance( pos_entity, pos_output );
-		if( dist <= FORCE_RADIUS )
+		float mult = (SAFE_RADIUS1 - distance) * SAFE_MULTIPLIER;
+		if( mult < FORCE_NONE )
 		{
-			float mult = (FORCE_RADIUS - dist) * 1.5;
-			if( mult < 0.0 )
-			{
-				mult = 0.0;
-			}
-			
-			force = FORCE_FORWARD * mult;
-			//PrintToChatAll( "%s Force %f | Dir %d", PLUGIN_TAG, force, direction );
+			mult = FORCE_NONE;
 		}
-		
-		if( g_fDrone_Force[entity][direction] != force )
+		force = FORCE_OBSTACLE * mult * -1.0;	// thruster facing tail so negative to flip the force
+	}
+	
+	if( g_fDrone_Force[entity][region] != force )
+	{
+		g_fDrone_Force[entity][region] = force;
+		// has no gear animation
+		int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][region] );
+		if( IsEntityValid( trust ))
 		{
-			g_fDrone_Force[entity][direction] = force;
-			
-			int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][direction] );
-			if( trust > MaxClients && IsValidEntity( trust ))
-			{
-				SetThrusterTorque( trust, force );
-			}
-			
-			int i, exaust, rotor, length;
-			float gear;
-			for( i = POS_ROTOR_1; i <= POS_ROTOR_4; i++ )
-			{
-				exaust = EntRefToEntIndex( g_iDroneEnvSteam[entity][i] );
-				if( exaust > MaxClients && IsValidEntity( exaust ))
-				{
-					length = STEAM_LEN_IDLE;
-					rotor = GetEntityParent( exaust );
-					GetEntAngle( rotor, ang_start, 0.0, 0 );
-					gear = GEAR_NONE;
-					if( force != FORCE_NONE )
-					{
-						length = STEAM_LEN_THRUST1;
-						gear = GEAR_LEFT;
-						if( direction == POS_THRUST_EAST )
-						{
-							gear = GEAR_RIGHT;
-						}
-					}
-					ang_start[2] = gear;
-					TeleportEntity( rotor, NULL_VECTOR, ang_start, NULL_VECTOR );
-					SetSteamLength( exaust, length );
-				}
-			}
+			SetThrusterTorque( trust, force );
+		}
+		//PrintToChatAll( "Force: %f | Region: %s", force, (region == ePOS_NORTH_EAST ? "North East":"North West"  ));
+	}
+}
+
+void Think_Obstacle90( int entity, int region, float distance, float direction )
+{
+	float force = FORCE_NONE;
+	if( distance <= SAFE_RADIUS1 )
+	{
+		float mult = (SAFE_RADIUS1 - distance) * SAFE_MULTIPLIER;
+		if( mult < FORCE_NONE )
+		{
+			mult = FORCE_NONE;
+		}
+		force = FORCE_OBSTACLE * mult * direction;
+		//PrintToChatAll( "Distance: %f | Direction %s", distance, (direction == 1.0 ? "Right":"Left"  ));
+	}
+	
+	if( g_fDrone_Force[entity][region] != force )
+	{
+		g_fDrone_Force[entity][region] = force;
+		SetRotorGear( entity, region, force, distance );
+		int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][region] );
+		if( IsEntityValid( trust ))
+		{
+			SetThrusterTorque( trust, force );
 		}
 	}
 }
 
-void Think_FrontObstackle( int entity, int direction, float rotation, float pos_entity[3] )
+void SetRotorGear( int entity, int region, float force, float distance )
 {
-	// sensor wall left, front, right
-	float ang_start[3];
-	float pos_output[3];
-	GetEntAngle( entity, ang_start, rotation, AXIS_YAW );
-	
-	bool gotpos = TraceRayGetEndpoint( pos_entity, ang_start, entity, pos_output );
-	if( gotpos )
+	float gears, vec_buff[3];
+	int exaust, rotor, leng, axis;
+	for( int i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
 	{
-		g_bIsHittingWall[entity] = false;
-		
-		float force = 0.0;
-		float dist = GetVectorDistance( pos_entity, pos_output );
-		if( dist <= FORCE_RADIUS )
+		exaust = EntRefToEntIndex( g_iDrone_EnvSteam[entity][i] );
+		if( IsEntityValid( exaust ))
 		{
-			g_bIsHittingWall[entity] = true;
-			float mult = (FORCE_RADIUS - dist) * 1.5;
-			if( mult < 0.0 )
+			gears = GEAR_NONE;
+			leng = ENVSTEAM_IDLE;
+			if( force != FORCE_NONE )
 			{
-				mult = 0.0;
-			}
-			
-			force = FORCE_FORWARD * mult;
-			//PrintToChatAll( "%s Force %f | Dir %d", PLUGIN_TAG, force, direction );
-		}
-		
-		if( g_fDrone_Force[entity][direction] != force )
-		{
-			g_fDrone_Force[entity][direction] = force;
-			
-			int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][direction] );
-			if( trust > MaxClients && IsValidEntity( trust ))
-			{
-				SetThrusterTorque( trust, force );
-			}
-			
-			int i, exaust, rotor, length;
-			float gear;
-			for( i = POS_ROTOR_1; i <= POS_ROTOR_4; i++ )
-			{
-				exaust = EntRefToEntIndex( g_iDroneEnvSteam[entity][i] );
-				if( exaust > MaxClients && IsValidEntity( exaust ))
+				gears = GEAR_ONE;
+				leng = ENVSTEAM_GEARONE;
+				if( distance <= SAFE_RADIUS2 )
 				{
-					length = STEAM_LEN_IDLE;
-					rotor = GetEntityParent( exaust );
-					GetEntAngle( rotor, ang_start, 0.0, 0 );
-					gear = GEAR_NONE;
-					if( force != FORCE_NONE )
-					{
-						length = STEAM_LEN_THRUST1;
-						gear = GEAR_BACKWARD;
-					}
-					ang_start[0] = gear;
-					TeleportEntity( rotor, NULL_VECTOR, ang_start, NULL_VECTOR );
-					SetSteamLength( exaust, length );
+					gears = GEAR_TWO;
+					leng = ENVSTEAM_GEARTWO;
 				}
+			}
+				
+			if( region == ePOS_SLATS )
+			{
+				axis = AXIS_ROLL;
+			}
+			else if( region == ePOS_ENGINE )
+			{
+				axis = AXIS_PITCH;
+				if( force > FORCE_NONE )
+				{
+					gears = GEAR_TWO;
+				}
+			}
+
+			if( force < FORCE_NONE )
+			{
+				gears *= -1.0;
+			}
+			
+			SetSteamLength( exaust, leng );
+			rotor = GetEntityParent( exaust );
+			if( IsEntityValid( rotor ))
+			{
+				GetEntAngle( rotor, vec_buff, 0.0, 0 );
+				vec_buff[axis] = gears;
+				TeleportEntity( rotor, NULL_VECTOR, vec_buff, NULL_VECTOR );
 			}
 		}
 	}
@@ -830,12 +1003,53 @@ void SetSteamLength( int entity, int length )
 	AcceptEntityInput( entity, "TurnOn" );
 }
 
-stock void Hit_The_Fucking_Emergency_Break( int entity )
+void SetThrusterTorque( int entity, float force )
 {
-	// use this fucking midair magic emergency break ONLY for heavier prop physic. ugly solution
-	float ang[3];
-	GetEntAngle( entity, ang, 0.0, 0 );
-	TeleportEntity( entity, NULL_VECTOR, ang, NULL_VECTOR );
-	//PrintToChatAll( "%s Drone is taking a fucking break", PLUGIN_TAG );
+	AcceptEntityInput( entity, "Deactivate" );
+	char force_scale[16];
+	IntToString( RoundToCeil(force), force_scale, sizeof( force_scale ));
+	DispatchKeyValue( entity, "Force", force_scale );
+	AcceptEntityInput( entity, "Activate" );
 }
+
+bool SaveDroneEntity( int drone, int entity_index, int array[SIZE][ePOS_SIZE], int post )
+{
+	if( IsEntityValid( entity_index ))
+	{
+		array[drone][post] = EntIndexToEntRef( entity_index );
+		return true;
+	}
+	return false;
+}
+
+void SetPerkButton( int entity, int type, float live_value )
+{
+	int btn = EntRefToEntIndex( g_iDrone_Perk[entity][type] );
+	int lit = EntRefToEntIndex( g_iDrone_Perk[entity][type+2] );
+	if( IsEntityValid( btn ) && IsEntityValid( lit ))
+	{
+		g_fButton_Life[entity][type] = live_value;
+		if( live_value == 0.0 )
+		{
+			AcceptEntityInput( lit, "TurnOn" );
+			if( type == ePERK_HEAL_BTN )
+			{
+				SetColor( btn, g_iColor_Green, 225 );
+			}
+			else if( type == ePERK_AMMO_BTN )
+			{
+				SetColor( btn, g_iColor_Blue, 225 );
+			}
+		}
+		else
+		{
+			AcceptEntityInput( lit, "TurnOff" );
+			SetColor( btn, g_iColor_Grey, 255 );
+		}
+	}
+}
+
+
+
+
 
