@@ -38,35 +38,8 @@ float	g_fRecharge_Short		= 1.0;		// interval between recharge if button presss f
 int		g_iHealthToAdd			= 5;		// amount of health to add per circle
 int		g_iAmmoToAdd			= 30;		// amount of ammo to add per circle
 
-
-enum struct DroneData
-{
-	float droneLife;
-	float droneForce;
-	float droneButtonLife;
-	int dronePerk;
-	int droneThrust;
-	int droneEnvsteam;
-	int droneMaster;
-	int droneSlave;
-}
-
-DroneData g_DD_Drone[PLATFORM_MAX_PATH] = { -1, ... };
-
-float	g_fDrone_Life[SIZE];
-float	g_fButton_Life[SIZE][2];
-float	g_fDrone_Force[SIZE][ePOS_SIZE];					// force value for thruster
-int		g_iDrone_Perk[SIZE][ePERK_SIZE];					// perk button
-int		g_iDrone_Thrust[SIZE][ePOS_SIZE];					// entity thruster
-int		g_iDrone_EnvSteam[SIZE][ePOS_SIZE];					// cosmetic
-int		g_iDrone_Master[SIZE]			= { -1, ... };		// drone target to follow
-int		g_iDrone_Slave[SIZE]			= { -1, ... };		// drone helicopter, follow parent.
-int		g_iClient_Drone[MAXPLAYERS+1]	= { -1, ... };		// guess what.. your crush... :)
-
-
-
-///// debigging var /////
-
+DroneData g_ddDrone[PLATFORM_MAX_PATH];
+int	g_iClient_Drone[MAXPLAYERS+1]	= { -1, ... };		// guess what.. your crush... :)
 
 #define PLUGIN_NAME		"l4d2_drone"
 #define PLUGIN_VERSION	"0.0b"
@@ -147,7 +120,7 @@ public Action AdminModelMove( int client, any args )
 		}
 		
 		int drone = EntRefToEntIndex( g_iClient_Drone[client] );
-		int slave = EntRefToEntIndex( g_iDrone_Slave[drone] );
+		int slave = EntRefToEntIndex( g_ddDrone[drone].Slave );
 		if( IsEntityValid( slave ))
 		{
 			float pos_start[3];
@@ -298,7 +271,7 @@ public Action OnPlayerRunCmd( int client, int& buttons, int& impulse, float vel[
 				{
 					char name[32];
 					GetEntityName( ent, name );
-					if( StrEqual( name, NAME_HEAL, false ) && g_fButton_Life[drone][ePERK_HEAL_BTN] == 0.0 )
+					if( StrEqual( name, NAME_HEAL, false ) && g_ddDrone[drone].ButtonLife[ePERK_HEAL_BTN] == 0.0 )
 					{
 						int health[2];
 						float buffer[2];
@@ -331,7 +304,7 @@ public Action OnPlayerRunCmd( int client, int& buttons, int& impulse, float vel[
 							if( g_bEnable_Chat ) { PrintToChat( client, "%s You still healty", PLUGIN_TAG );}
 						}
 					}
-					else if( StrEqual( name, NAME_AMMO, false ) && g_fButton_Life[drone][ePERK_AMMO_BTN] == 0.0 )
+					else if( StrEqual( name, NAME_AMMO, false ) && g_ddDrone[drone].ButtonLife[ePERK_AMMO_BTN] == 0.0 )
 					{
 						if( GiveSurvivorAmmo( client, g_iAmmoToAdd ))
 						{
@@ -366,7 +339,7 @@ public Action OnPlayerRunCmd( int client, int& buttons, int& impulse, float vel[
 				{
 					
 					int newtarget = EntIndexToEntRef( target );
-					if( g_iDrone_Master[pet] != newtarget && g_bEnable_Chat )	 // anti spam
+					if( g_ddDrone[pet].Master != newtarget && g_bEnable_Chat )	 // anti spam
 					{
 						if( target < MaxClients )
 						{
@@ -379,15 +352,15 @@ public Action OnPlayerRunCmd( int client, int& buttons, int& impulse, float vel[
 							PrintToChat( client, "%s Acquiring target \x05%s", PLUGIN_TAG, entName );
 						}
 					}
-					g_iDrone_Master[pet] = newtarget;
+					g_ddDrone[pet].Master = newtarget;
 				}
 				else
 				{
-					if( g_iDrone_Master[pet] != -1 && g_bEnable_Chat ) // anti spam
+					if( g_ddDrone[pet].Master != -1 && g_bEnable_Chat ) // anti spam
 					{
 						PrintToChat( client, "%s Target cancled", PLUGIN_TAG );
 					}
-					g_iDrone_Master[pet] = -1;
+					g_ddDrone[pet].Master = -1;
 				}
 			}
 		}
@@ -432,7 +405,7 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 	int drone = CreatePropPhysicsOverride( MDL_DUMMY, pos, ang, 0.01 );
 	if( IsEntityValid( drone ))
 	{
-		g_iDrone_Master[drone] = -1;
+		g_ddDrone[drone].Master = -1;
 		SetOwner( drone, owner );
 		
 		float pos_attch[4][3];
@@ -461,9 +434,9 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 			
 			// rotor force
 			SetVector( -90.0, 0.0, 0.0, ang_adjust );
-			g_fDrone_Force[drone][i] = FORCE_UPWARD;
-			temp = CreateThrust( drone, pos_attch[i], ang_adjust, g_fDrone_Force[drone][i] );
-			SaveDroneEntity( drone, temp, g_iDrone_Thrust, i );
+			g_ddDrone[drone].Force[i] = FORCE_UPWARD;
+			temp = CreateThrust( drone, pos_attch[i], ang_adjust, g_ddDrone[drone].Force[i] );
+			g_ddDrone[drone].Thrust[i] = EntIndexToEntRef( temp );
 			
 			// crocodile model, act as rotor parent
 			SetVector( 0.0, 0.0, 0.0, ang_adjust );
@@ -478,8 +451,8 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 			SetVector( 0.0, 0.0, -3.0, pos_origin );
 			SetVector( 90.0, 0.0, 0.0, ang_adjust );
 			temp = CreateEnvSteam( dummy, pos_origin, ang_adjust, g_iColor_Exaust );
-			SaveDroneEntity( drone, temp, g_iDrone_EnvSteam, i );
-			
+			g_ddDrone[drone].EnvSteam[i] = EntIndexToEntRef( temp );
+
 			ang_start += ang_incre;
 		}
 		
@@ -491,12 +464,12 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		SetVector( -18.0, -2.5, -1.0, pos_origin );
 		SetVector( 180.0, 0.0, 0.0, ang_adjust );
 		temp = CreateEnvSteam( drone, pos_origin, ang_adjust, g_iColor_Exaust );
-		SaveDroneEntity( drone, temp, g_iDrone_EnvSteam, ePOS_EXAUST_LEFT );
+		g_ddDrone[drone].EnvSteam[ePOS_EXAUST_LEFT] = EntIndexToEntRef( temp );
 		
 		SetVector( -18.0, 2.5, -1.0, pos_origin );
 		SetVector( 180.0, 0.0, 0.0, ang_adjust );
 		temp = CreateEnvSteam( drone, pos_origin, ang_adjust, g_iColor_Exaust );
-		SaveDroneEntity( drone, temp, g_iDrone_EnvSteam, ePOS_EXAUST_RIGHT );
+		g_ddDrone[drone].EnvSteam[ePOS_EXAUST_RIGHT] = EntIndexToEntRef( temp );
 		
 		
 		///////////////////////////////////////
@@ -505,38 +478,37 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		// thrust push forward
 		SetVector( -2.0, 0.0, 0.0, pos_origin );
 		SetVector( 0.0, 0.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][ePOS_ENGINE] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_ENGINE] );
-		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_ENGINE );
+		g_ddDrone[drone].Force[ePOS_ENGINE] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_ddDrone[drone].Force[ePOS_ENGINE] );
+		g_ddDrone[drone].Thrust[ePOS_ENGINE] = EntIndexToEntRef( temp );
 		
 		// thrust to push left right, force positive move right, negative left
 		SetVector( 0.0, 1.0, 0.0, pos_origin );
 		SetVector( 0.0, ANGLE_EAST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][ePOS_SLATS] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_SLATS] );
-		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_SLATS );
+		g_ddDrone[drone].Force[ePOS_SLATS] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_ddDrone[drone].Force[ePOS_SLATS] );
+		g_ddDrone[drone].Thrust[ePOS_SLATS] = EntIndexToEntRef( temp );
 		
 		// thrust to push against nort east
 		SetVector( 1.0, 1.0, 0.0, pos_origin );
 		SetVector( 0.0, ANGLE_NTEAST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][ePOS_NORTH_EAST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_NORTH_EAST] );
-		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_NORTH_EAST );
+		g_ddDrone[drone].Force[ePOS_NORTH_EAST] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_ddDrone[drone].Force[ePOS_NORTH_EAST] );
+		g_ddDrone[drone].Thrust[ePOS_NORTH_EAST] = EntIndexToEntRef( temp );
 		
 		// thrust to push against nort west
 		SetVector( 1.0, -1.0, 0.0, pos_origin );
 		SetVector( 0.0, ANGLE_NTWEST, 0.0, ang_adjust );
-		g_fDrone_Force[drone][ePOS_NORTH_WEST] = FORCE_NONE;
-		temp = CreateThrust( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_NORTH_WEST] );
-		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_NORTH_WEST );
+		g_ddDrone[drone].Force[ePOS_NORTH_WEST] = FORCE_NONE;
+		temp = CreateThrust( drone, pos_origin, ang_adjust, g_ddDrone[drone].Force[ePOS_NORTH_WEST] );
+		g_ddDrone[drone].Thrust[ePOS_NORTH_WEST] = EntIndexToEntRef( temp );
 		
 		// thrust to rotate left right
 		SetVector( -1.0, 0.0, 0.0, pos_origin );
 		SetVector( 0.0, 0.0, 0.0, ang_adjust );
-		g_fDrone_Force[drone][ePOS_RUDDER] = FORCE_NONE;
-		temp = CreateTorque( drone, pos_origin, ang_adjust, g_fDrone_Force[drone][ePOS_RUDDER] );
-		SaveDroneEntity( drone, temp, g_iDrone_Thrust, ePOS_RUDDER );
-		
+		g_ddDrone[drone].Force[ePOS_RUDDER] = FORCE_NONE;
+		temp = CreateTorque( drone, pos_origin, ang_adjust, g_ddDrone[drone].Force[ePOS_RUDDER] );
+		g_ddDrone[drone].Thrust[ePOS_RUDDER] = EntIndexToEntRef( temp );
 		
 		///////////////////////////////////////
 		/////////////// COSMETIC //////////////
@@ -550,7 +522,7 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		SetVector( 74.0, 104.0, 10.0, pos_origin );
 		SetVector( 0.0, 91.0, 0.0, ang_adjust );
 		temp = CreatEntAnimation( drone, MDL_HELIY, "hover1", pos_origin, ang_adjust, 0.03 );
-		g_iDrone_Slave[drone] = EntIndexToEntRef( temp );
+		g_ddDrone[drone].Slave = EntIndexToEntRef( temp );
 		
 		
 		///////////////////////////////////////
@@ -562,22 +534,22 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 			SetVector( 15.0, 0.0, 0.0, pos_origin );
 			SetVector( 0.0, 90.0, 170.0, ang_adjust );
 			temp = CreateButton( drone, MDL_DUMMY, NAME_HEAL, pos_origin, ang_adjust, 0.25, g_iColor_Green, 0 ); // health
-			g_iDrone_Perk[drone][ePERK_HEAL_BTN] = EntIndexToEntRef( temp );
+			g_ddDrone[drone].Perk[ePERK_HEAL_BTN] = EntIndexToEntRef( temp );
 			
 			SetVector( 15.0, 0.0, -5.0, pos_origin );
 			SetVector( 90.0, 0.0, 0.0, ang_adjust );
 			temp = CreateLight( drone, pos_origin, ang_adjust, g_iColor_Green );
-			g_iDrone_Perk[drone][ePERK_HEAL_LIGHT] = EntIndexToEntRef( temp );
+			g_ddDrone[drone].Perk[ePERK_HEAL_LIGHT] = EntIndexToEntRef( temp );
 			
 			SetVector( -10.0, 0.0, -2.0, pos_origin );
 			SetVector( 0.0, 90.0, 170.0, ang_adjust );
 			temp = CreateButton( drone, MDL_DUMMY, NAME_AMMO, pos_origin, ang_adjust, 0.25, g_iColor_Green, 0 ); // ammo
-			g_iDrone_Perk[drone][ePERK_AMMO_BTN] = EntIndexToEntRef( temp );
+			g_ddDrone[drone].Perk[ePERK_AMMO_BTN] = EntIndexToEntRef( temp );
 			
 			SetVector( -10.0, 0.0, -7.0, pos_origin );
 			SetVector( 90.0, 0.0, 0.0, ang_adjust );
 			temp = CreateLight( drone, pos_origin, ang_adjust, g_iColor_Blue );
-			g_iDrone_Perk[drone][ePERK_AMMO_LIGHT] = EntIndexToEntRef( temp );
+			g_ddDrone[drone].Perk[ePERK_AMMO_LIGHT] = EntIndexToEntRef( temp );
 			SetPerkButton( drone, ePERK_HEAL_BTN, g_fRecharge_Heal );
 			SetPerkButton( drone, ePERK_AMMO_BTN, g_fRecharge_Ammo );
 		}
@@ -601,7 +573,7 @@ int CreateLovelyDrone( int owner, float pos[3], float ang[3], float life )
 		SetVector( 0.0, 0.0, 0.0, ang_adjust );
 		CreateUprightConstrain( drone, pos_origin, ang_adjust );
 		
-		g_fDrone_Life[drone] = life;
+		g_ddDrone[drone].Life = life;
 		CreateTimer( INTERVAL_LIFE, Timer_DroneThink, EntIndexToEntRef( drone ), TIMER_REPEAT );
 	}
 	return drone;
@@ -615,24 +587,24 @@ public Action Timer_DroneThink( Handle timer, any entref )
 		int client = GetOwner( entity );
 		if( IsSurvivorValid( client ))
 		{
-			if( g_fDrone_Life[entity] > 0.0 && g_bIsRoundStart )
+			if( g_ddDrone[entity].Life > 0.0 && g_bIsRoundStart )
 			{
-				g_fDrone_Life[entity] -= INTERVAL_LIFE;
+				g_ddDrone[entity].Life -= INTERVAL_LIFE;
 				
 				if( g_bIsPerkEnable )
 				{
-					if( g_fButton_Life[entity][ePERK_HEAL_BTN] > 0.0 )
+					if( g_ddDrone[entity].ButtonLife[ePERK_HEAL_BTN] > 0.0 )
 					{
-						g_fButton_Life[entity][ePERK_HEAL_BTN] -= INTERVAL_LIFE;
-						if( g_fButton_Life[entity][ePERK_HEAL_BTN] <= 0.0 )
+						g_ddDrone[entity].ButtonLife[ePERK_HEAL_BTN] -= INTERVAL_LIFE;
+						if( g_ddDrone[entity].ButtonLife[ePERK_HEAL_BTN] <= 0.0 )
 						{
 							SetPerkButton( entity, ePERK_HEAL_BTN, 0.0 );
 						}
 					}
-					if( g_fButton_Life[entity][ePERK_AMMO_BTN] > 0.0 )
+					if( g_ddDrone[entity].ButtonLife[ePERK_AMMO_BTN] > 0.0 )
 					{
-						g_fButton_Life[entity][ePERK_AMMO_BTN] -= INTERVAL_LIFE;
-						if( g_fButton_Life[entity][ePERK_AMMO_BTN] <= 0.0 )
+						g_ddDrone[entity].ButtonLife[ePERK_AMMO_BTN] -= INTERVAL_LIFE;
+						if( g_ddDrone[entity].ButtonLife[ePERK_AMMO_BTN] <= 0.0 )
 						{
 							SetPerkButton( entity, ePERK_AMMO_BTN, 0.0 );
 						}
@@ -644,16 +616,16 @@ public Action Timer_DroneThink( Handle timer, any entref )
 				GetEntOrigin( entity, pos_entity, 0.0 );
 				GetEntOrigin( client, pos_target, DRONE_HEIGHT_INITIAL );
 				
-				if( g_iDrone_Master[entity] != -1 )
+				if( g_ddDrone[entity].Master != -1 )
 				{
-					int target = EntRefToEntIndex( g_iDrone_Master[entity] );
+					int target = EntRefToEntIndex( g_ddDrone[entity].Master );
 					if( target > 0 && IsValidEdict( target ))
 					{
 						GetEntOrigin( target, pos_target, DRONE_HEIGHT_INITIAL );
 					}
 					else
 					{
-						g_iDrone_Master[entity] = -1;
+						g_ddDrone[entity].Master = -1;
 						if( g_bEnable_Chat ) { PrintToChat( client, "%s Target cleared", PLUGIN_TAG );}
 					}
 				}
@@ -704,19 +676,19 @@ void Think_Lifting( int entity, float pos_entity[3], float pos_target[3] )
 	}
 	
 	float force = FORCE_UPWARD - direction;
-	if( g_fDrone_Force[entity][ePOS_ROTOR_1] != force )
+	if( g_ddDrone[entity].Force[ePOS_ROTOR_1] != force )
 	{
 		int temp;
 		for( int i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
 		{
-			g_fDrone_Force[entity][i] = force;
-			temp = EntRefToEntIndex( g_iDrone_Thrust[entity][i] );
+			g_ddDrone[entity].Force[i] = force;
+			temp = EntRefToEntIndex( g_ddDrone[entity].Thrust[i] );
 			if( IsEntityValid( temp ))
 			{
 				SetThrusterTorque( temp, force );
 			}
 			
-			temp = EntRefToEntIndex( g_iDrone_EnvSteam[entity][i] );
+			temp = EntRefToEntIndex( g_ddDrone[entity].EnvSteam[i] );
 			if( IsEntityValid( temp ))
 			{
 				if( force < 180.0 )
@@ -759,9 +731,9 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 	// positive value turn left
 	float force = FORCE_ROTATE * direction;
 	
-	if( g_fDrone_Force[entity][ePOS_RUDDER] != force )
+	if( g_ddDrone[entity].Force[ePOS_RUDDER] != force )
 	{
-		g_fDrone_Force[entity][ePOS_RUDDER] = force;
+		g_ddDrone[entity].Force[ePOS_RUDDER] = force;
 		
 		int length = ENVSTEAM_IDLE;
 		float ang_ang[3] = { 180.0, 0.0, 0.0 };
@@ -775,7 +747,7 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 			ang_ang[AXIS_YAW] = GEAR_ONE;
 			
 			// we not fly forward at high velocity. show aggresive tail animation.
-			if( g_fDrone_Force[entity][ePOS_ENGINE] < 200.0 )
+			if( g_ddDrone[entity].Force[ePOS_ENGINE] < 200.0 )
 			{
 				ang_ang[AXIS_YAW] = GEAR_TWO;
 			}
@@ -786,8 +758,8 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 			}
 		}
 
-		int temp1 = EntRefToEntIndex( g_iDrone_EnvSteam[entity][ePOS_EXAUST_LEFT] );
-		int temp2 = EntRefToEntIndex( g_iDrone_EnvSteam[entity][ePOS_EXAUST_RIGHT] );
+		int temp1 = EntRefToEntIndex( g_ddDrone[entity].EnvSteam[ePOS_EXAUST_LEFT] );
+		int temp2 = EntRefToEntIndex( g_ddDrone[entity].EnvSteam[ePOS_EXAUST_RIGHT] );
 		if( IsEntityValid( temp1 ) && IsEntityValid( temp2 ))
 		{
 			TeleportEntity( temp1, NULL_VECTOR, ang_ang, NULL_VECTOR );
@@ -796,7 +768,7 @@ void Think_Direction( int entity, float pos_entity[3], float pos_target[3] )
 			SetSteamLength( temp2, length );
 		}
 		
-		int temp = EntRefToEntIndex( g_iDrone_Thrust[entity][ePOS_RUDDER] );
+		int temp = EntRefToEntIndex( g_ddDrone[entity].Thrust[ePOS_RUDDER] );
 		if( IsEntityValid( temp ))
 		{
 			SetThrusterTorque( temp, force );
@@ -885,11 +857,11 @@ void Think_Forward( int entity, float pos_entity[3], float pos_target[3], float 
 		//PrintToChatAll( "%s Force %f | Direction %s", PLUGIN_TAG, ( force > 0.0 ? "Forward":"Reverse"));
 	}
 	
-	if( g_fDrone_Force[entity][ePOS_ENGINE] != force )
+	if( g_ddDrone[entity].Force[ePOS_ENGINE] != force )
 	{
-		g_fDrone_Force[entity][ePOS_ENGINE] = force;
+		g_ddDrone[entity].Force[ePOS_ENGINE] = force;
 		SetRotorGear( entity, ePOS_ENGINE, force, dist );
-		int thrust = EntRefToEntIndex( g_iDrone_Thrust[entity][ePOS_ENGINE] );
+		int thrust = EntRefToEntIndex( g_ddDrone[entity].Thrust[ePOS_ENGINE] );
 		if( IsEntityValid( thrust ))
 		{
 			SetThrusterTorque( thrust, force );
@@ -916,11 +888,11 @@ void Think_Obstacle45( int entity, int region, float distance )
 		force = FORCE_OBSTACLE * mult * -1.0;	// thruster facing tail so negative to flip the force
 	}
 	
-	if( g_fDrone_Force[entity][region] != force )
+	if( g_ddDrone[entity].Force[region] != force )
 	{
-		g_fDrone_Force[entity][region] = force;
+		g_ddDrone[entity].Force[region] = force;
 		// has no gear animation
-		int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][region] );
+		int trust = EntRefToEntIndex( g_ddDrone[entity].Thrust[region] );
 		if( IsEntityValid( trust ))
 		{
 			SetThrusterTorque( trust, force );
@@ -943,11 +915,11 @@ void Think_Obstacle90( int entity, int region, float distance, float direction )
 		//PrintToChatAll( "Distance: %f | Direction %s", distance, (direction == 1.0 ? "Right":"Left"  ));
 	}
 	
-	if( g_fDrone_Force[entity][region] != force )
+	if( g_ddDrone[entity].Force[region] != force )
 	{
-		g_fDrone_Force[entity][region] = force;
+		g_ddDrone[entity].Force[region] = force;
 		SetRotorGear( entity, region, force, distance );
-		int trust = EntRefToEntIndex( g_iDrone_Thrust[entity][region] );
+		int trust = EntRefToEntIndex( g_ddDrone[entity].Thrust[region] );
 		if( IsEntityValid( trust ))
 		{
 			SetThrusterTorque( trust, force );
@@ -961,7 +933,7 @@ void SetRotorGear( int entity, int region, float force, float distance )
 	int exaust, rotor, leng, axis;
 	for( int i = ePOS_ROTOR_1; i <= ePOS_ROTOR_4; i++ )
 	{
-		exaust = EntRefToEntIndex( g_iDrone_EnvSteam[entity][i] );
+		exaust = EntRefToEntIndex( g_ddDrone[entity].EnvSteam[i] );
 		if( IsEntityValid( exaust ))
 		{
 			gears = GEAR_NONE;
@@ -1025,23 +997,13 @@ void SetThrusterTorque( int entity, float force )
 	AcceptEntityInput( entity, "Activate" );
 }
 
-bool SaveDroneEntity( int drone, int entity_index, int array[SIZE][ePOS_SIZE], int post )
-{
-	if( IsEntityValid( entity_index ))
-	{
-		array[drone][post] = EntIndexToEntRef( entity_index );
-		return true;
-	}
-	return false;
-}
-
 void SetPerkButton( int entity, int type, float live_value )
 {
-	int btn = EntRefToEntIndex( g_iDrone_Perk[entity][type] );
-	int lit = EntRefToEntIndex( g_iDrone_Perk[entity][type+2] );
+	int btn = EntRefToEntIndex( g_ddDrone[entity].Perk[type] );
+	int lit = EntRefToEntIndex( g_ddDrone[entity].Perk[type+2] );
 	if( IsEntityValid( btn ) && IsEntityValid( lit ))
 	{
-		g_fButton_Life[entity][type] = live_value;
+		g_ddDrone[entity].ButtonLife[type] = live_value;
 		if( live_value == 0.0 )
 		{
 			AcceptEntityInput( lit, "TurnOn" );
