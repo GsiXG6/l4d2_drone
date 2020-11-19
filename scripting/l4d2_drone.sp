@@ -1,7 +1,3 @@
-/* todo
-- drone slave animation...
-*/
-
 #include <sourcemod>
 #include <sdktools>
 #include <l4d2_drone>
@@ -42,6 +38,21 @@ float	g_fRecharge_Short		= 1.0;		// interval between recharge if button presss f
 int		g_iHealthToAdd			= 5;		// amount of health to add per circle
 int		g_iAmmoToAdd			= 30;		// amount of ammo to add per circle
 
+
+enum struct DroneData
+{
+	float droneLife;
+	float droneForce;
+	float droneButtonLife;
+	int dronePerk;
+	int droneThrust;
+	int droneEnvsteam;
+	int droneMaster;
+	int droneSlave;
+}
+
+DroneData g_DD_Drone[PLATFORM_MAX_PATH] = { -1, ... };
+
 float	g_fDrone_Life[SIZE];
 float	g_fButton_Life[SIZE][2];
 float	g_fDrone_Force[SIZE][ePOS_SIZE];					// force value for thruster
@@ -51,6 +62,8 @@ int		g_iDrone_EnvSteam[SIZE][ePOS_SIZE];					// cosmetic
 int		g_iDrone_Master[SIZE]			= { -1, ... };		// drone target to follow
 int		g_iDrone_Slave[SIZE]			= { -1, ... };		// drone helicopter, follow parent.
 int		g_iClient_Drone[MAXPLAYERS+1]	= { -1, ... };		// guess what.. your crush... :)
+
+
 
 ///// debigging var /////
 
