@@ -59,6 +59,18 @@ enum
 	ePERK_SIZE,
 };
 
+enum struct DroneData
+{
+	float Life;					// drone life
+	float Force[ePOS_SIZE];		// force value for thruster
+	float ButtonLife[2];		// perk button life
+	int Perk[ePERK_SIZE];		// perk button
+	int Thrust[ePOS_SIZE];		// entity thruster
+	int EnvSteam[ePOS_SIZE];	// cosmetic
+	int Master;					// drone target to follow
+	int Slave;					// drone helicopter, follow parent.
+}
+
 #define NAME_HEAL				"btn_drone_heal"
 #define NAME_AMMO				"btn_drone_ammo"
 
